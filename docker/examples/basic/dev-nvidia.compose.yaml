@@ -1,6 +1,8 @@
 services:
   autoware:
     image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-jazzy
+    network_mode: host
+    ipc: host
     privileged: true
     runtime: nvidia
     stdin_open: true
@@ -16,6 +18,15 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/autoware_data/maps:/home/aw/autoware_data/maps
       - ${HOME}/autoware_data/ml_models:/home/aw/autoware_data/ml_models
+      - ${HOME}/vtd_autoware_maps:/home/aw/vtd_autoware_maps:ro
+      - ${HOME}/autoware/docker/files/cyclonedds.xml:/home/aw/cyclonedds.xml:ro
+      - ${HOME}/autoware/docker/files/default_adapi_vtd.param.yaml:/opt/autoware/autoware_default_adapi_universe/share/autoware_default_adapi_universe/config/default_adapi.param.yaml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/common.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/common.param.yaml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/control.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/control.yaml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/localization.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/localization.yaml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/system.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/system.yaml:ro
     deploy:
       resources:
         reservations:

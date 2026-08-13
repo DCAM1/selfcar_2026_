@@ -3,13 +3,19 @@
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
   <Domain Id="any">
     <Discovery>
-      <ParticipantIndex>none</ParticipantIndex>
+      <!-- Deterministic localhost discovery lets separate host-network containers
+           find each other regardless of their startup order. -->
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <Peers>
+        <Peer Address="localhost"/>
+      </Peers>
     </Discovery>
     <General>
       <Interfaces>
-        <NetworkInterface name="lo" priority="default" multicast="default"/>
+        <NetworkInterface name="lo" priority="default" multicast="false"/>
       </Interfaces>
-      <AllowMulticast>default</AllowMulticast>
+      <AllowMulticast>false</AllowMulticast>
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
     <Internal>
