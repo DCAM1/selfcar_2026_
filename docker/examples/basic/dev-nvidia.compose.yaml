@@ -20,6 +20,7 @@ services:
       - ${HOME}/autoware_data/ml_models:/home/aw/autoware_data/ml_models
       - ${HOME}/vtd_autoware_maps:/home/aw/vtd_autoware_maps:ro
       - ${HOME}/autoware/docker/files/cyclonedds.xml:/home/aw/cyclonedds.xml:ro
+      - ${HOME}/autoware/src/launcher/autoware_launch/vehicle/sample_vehicle_launch/sample_vehicle_description/config/vehicle_info.param.yaml:/opt/autoware/sample_vehicle_description/share/sample_vehicle_description/config/vehicle_info.param.yaml:ro
       - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_planner/lib/libautoware_behavior_path_planner_lib.so:/opt/autoware/autoware_behavior_path_planner/lib/libautoware_behavior_path_planner_lib.so:ro
       - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_planner_common/lib/libautoware_behavior_path_planner_common.so:/opt/autoware/autoware_behavior_path_planner_common/lib/libautoware_behavior_path_planner_common.so:ro
       - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_lane_change_module/lib/libautoware_behavior_path_lane_change_module.so:/opt/autoware/autoware_behavior_path_lane_change_module/lib/libautoware_behavior_path_lane_change_module.so:ro
