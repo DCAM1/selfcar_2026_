@@ -2,7 +2,7 @@
   "names": {
     "*": {
       "cmake-args": [
-        "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+        "-DCMAKE_BUILD_TYPE=Release"
       ]
     }
   }
