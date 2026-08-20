@@ -11,6 +11,12 @@ build/
 install/
 log/
 
+# Local credentials and generated/binary artifacts
+.env
+*.so
+*.a
+src.zip
+
 # Python
 *.pyc
 

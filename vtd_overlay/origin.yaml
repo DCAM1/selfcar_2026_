@@ -1,0 +1,130 @@
+schema: 1
+description: >-
+  Provenance for the source copied from clean nested workspaces into the
+  tracked VTD overlay. The overlay preserves the local runtime source while
+  the unmodified workspace remains pinned by repositories/autoware.lock.repos.
+upstream_snapshots:
+  autoware_universe:
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_head_before_migration: b10300980e9009e61721808de13dbc27b414f1a3
+    local_commit_range: 6e477c645efec33f7909095eea684474e97f5e3d..b10300980e9009e61721808de13dbc27b414f1a3
+  autoware_launch:
+    origin_url: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_ref: 0.52.0
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    local_head_before_migration: 66b0a248159f783bed2c6d5d3770fc49c0ba05e6
+    local_commit_range: f942598d44b5769353167c76b784323d5c14c8c7..66b0a248159f783bed2c6d5d3770fc49c0ba05e6
+packages:
+  - package: autoware_mission_planner_universe
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/autoware_mission_planner_universe
+    repository_path: vtd_overlay/src/autoware_universe/planning/autoware_mission_planner_universe
+    changed_files:
+      - src/lanelet2_plugins/default_planner.cpp
+    source_tree_sha256: f9d24f256841b5a3f32cea519c8f35193522b824fa2a6e028ac726dc145962ce
+    license: Apache-2.0
+  - package: autoware_behavior_path_lane_change_module
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_lane_change_module
+    repository_path: vtd_overlay/src/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_lane_change_module
+    changed_files:
+      - config/lane_change.param.yaml
+      - include/autoware/behavior_path_lane_change_module/structs/parameters.hpp
+      - include/autoware/behavior_path_lane_change_module/utils/calculation.hpp
+      - include/autoware/behavior_path_lane_change_module/utils/utils.hpp
+      - src/manager.cpp
+      - src/scene.cpp
+      - src/utils/calculation.cpp
+      - src/utils/utils.cpp
+    source_tree_sha256: c009d86de60809a18e7201913e31c821bb3d63fe51c88f64b549746b893c8d07
+    license: Apache-2.0
+  - package: autoware_behavior_path_planner
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_planner
+    repository_path: vtd_overlay/src/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_planner
+    changed_files:
+      - src/planner_manager.cpp
+    source_tree_sha256: 5e1717b29ce6ed70ac160ce074257b2759f3374ca5295621394382b0ae7b0bec
+    license: Apache-2.0
+  - package: autoware_behavior_path_planner_common
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_planner_common
+    repository_path: vtd_overlay/src/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_planner_common
+    changed_files:
+      - include/autoware/behavior_path_planner_common/turn_signal_decider.hpp
+      - include/autoware/behavior_path_planner_common/utils/drivable_area_expansion/types.hpp
+      - src/turn_signal_decider.cpp
+      - src/utils/drivable_area_expansion/drivable_area_expansion.cpp
+      - src/utils/drivable_area_expansion/map_utils.cpp
+      - src/utils/path_utils.cpp
+      - src/utils/utils.cpp
+      - test/test_drivable_area_expansion.cpp
+    source_tree_sha256: dce2755890de2f51dc2c830f810911d7febe7bd1345a7a62aedc69291cb5bcbf
+    license: Apache-2.0
+  - package: autoware_behavior_path_static_obstacle_avoidance_module
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_static_obstacle_avoidance_module
+    repository_path: vtd_overlay/src/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_static_obstacle_avoidance_module
+    changed_files:
+      - src/scene.cpp
+    source_tree_sha256: b96435bf3e20406df8bbc134805a840267c3f2d3ee7b3aa0a2dd8ac559a98b30
+    license: Apache-2.0
+  - package: autoware_behavior_velocity_traffic_light_module
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_velocity_planner/autoware_behavior_velocity_traffic_light_module
+    repository_path: vtd_overlay/src/autoware_universe/planning/behavior_velocity_planner/autoware_behavior_velocity_traffic_light_module
+    changed_files:
+      - config/traffic_light.param.yaml
+    source_tree_sha256: 2f052e7e992b294d9568ef789579b24714bc66ea01e305605b870e89e3ab3e95
+    license: Apache-2.0
+  - package: vtd_ros2_bridge
+    origin_url: local-only; no upstream repository was found
+    upstream_ref: local-only
+    upstream_commit: not-applicable
+    local_source_path_before_migration: /home/a/vtd_ros2_bridge_ws/src/vtd_ros2_bridge
+    repository_path: vtd_overlay/src/vtd_ros2_bridge
+    changed_files:
+      - CMakeLists.txt
+      - README.md
+      - config/traffic_light_id_map.csv
+      - config/vtd_bridge.param.yaml
+      - include/vtd_ros2_bridge/rdb_codec.hpp
+      - include/vtd_ros2_bridge/rdb_shm_reader.hpp
+      - include/vtd_ros2_bridge/rdb_tcp_client.hpp
+      - launch/vtd_bridge.launch.py
+      - msg/VtdEgoState.msg
+      - msg/VtdObject.msg
+      - msg/VtdObjectArray.msg
+      - msg/VtdTrafficLight.msg
+      - msg/VtdTrafficLightArray.msg
+      - package.xml
+      - scripts/generate_traffic_light_id_map.py
+      - scripts/run_bridge_docker.sh
+      - src/rdb_codec.cpp
+      - src/rdb_shm_reader.cpp
+      - src/rdb_tcp_client.cpp
+      - src/vtd_bridge_node.cpp
+      - test/fake_rdb_server.py
+      - test/test_rdb_codec.cpp
+    source_tree_sha256: d124187bd42471183b346c6e2992642e49e1e2bc7200b26e3ffef68658786285
+    license: Apache-2.0
+local_tools:
+  - name: map_tools
+    origin_url: local-only; recovered from the local backup workspace
+    source_path_before_migration: /home/a/autoware_local_backup/map_tools
+    repository_path: tools/map
+    license: Apache-2.0 where headers apply; preserved as-is

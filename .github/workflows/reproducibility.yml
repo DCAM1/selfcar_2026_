@@ -1,0 +1,35 @@
+name: VTD reproducibility
+
+on:
+  pull_request:
+  push:
+    branches:
+      - chore/reproducible-vtd-source
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n autoware scripts/*.sh
+      - name: Validate compose syntax
+        run: docker compose --env-file .env.example -f docker/vtd/compose.yaml config --quiet
+      - name: Run reproducibility checks
+        run: ./scripts/verify-reproducibility.sh
+
+  full-image:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, x64, nvidia]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Build VTD image
+        run: |
+          test -f .env
+          ./scripts/build-vtd-image.sh

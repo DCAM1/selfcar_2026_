@@ -1,6 +1,8 @@
+# Generic upstream developer container.
+# The reproducible VTD execution path is docker/vtd/compose.yaml.
 services:
   autoware:
-    image: ghcr.io/autowarefoundation/autoware:universe-devel-cuda-jazzy
+    image: ghcr.io/autowarefoundation/autoware@sha256:86d12e0f2504b058b54faead3a6113b5777c778899fc7a7c362e787808fdac24
     network_mode: host
     ipc: host
     privileged: true
@@ -16,29 +18,9 @@ services:
       - QT_X11_NO_MITSHM=1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/autoware_data/maps:/home/aw/autoware_data/maps
-      - ${HOME}/autoware_data/ml_models:/home/aw/autoware_data/ml_models
-      - ${HOME}/vtd_autoware_maps:/home/aw/vtd_autoware_maps:ro
-      - ${HOME}/autoware/docker/files/cyclonedds.xml:/home/aw/cyclonedds.xml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/vehicle/sample_vehicle_launch/sample_vehicle_description/config/vehicle_info.param.yaml:/opt/autoware/sample_vehicle_description/share/sample_vehicle_description/config/vehicle_info.param.yaml:ro
-      - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_planner/lib/libautoware_behavior_path_planner_lib.so:/opt/autoware/autoware_behavior_path_planner/lib/libautoware_behavior_path_planner_lib.so:ro
-      - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_planner_common/lib/libautoware_behavior_path_planner_common.so:/opt/autoware/autoware_behavior_path_planner_common/lib/libautoware_behavior_path_planner_common.so:ro
-      - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_lane_change_module/lib/libautoware_behavior_path_lane_change_module.so:/opt/autoware/autoware_behavior_path_lane_change_module/lib/libautoware_behavior_path_lane_change_module.so:ro
-      - ${HOME}/autoware_vtd_overlay/install/autoware_behavior_path_static_obstacle_avoidance_module/lib/libautoware_behavior_path_static_obstacle_avoidance_module.so:/opt/autoware/autoware_behavior_path_static_obstacle_avoidance_module/lib/libautoware_behavior_path_static_obstacle_avoidance_module.so:ro
-      - ${HOME}/autoware_vtd_overlay/install/autoware_mission_planner_universe/lib/libautoware_mission_planner_universe_lanelet2_plugins.so:/opt/autoware/autoware_mission_planner_universe/lib/libautoware_mission_planner_universe_lanelet2_plugins.so:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml:ro
-      - ${HOME}/autoware/docker/files/default_adapi_vtd.param.yaml:/opt/autoware/autoware_default_adapi_universe/share/autoware_default_adapi_universe/config/default_adapi.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/rviz/autoware.rviz:/opt/autoware/autoware_launch/share/autoware_launch/rviz/autoware.rviz:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/common.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/common.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/control/trajectory_follower/longitudinal/pid.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/control/trajectory_follower/longitudinal/pid.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/control/trajectory_follower/lateral/mpc.param.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/control/trajectory_follower/lateral/mpc.param.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/control.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/control.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/localization.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/localization.yaml:ro
-      - ${HOME}/autoware/src/launcher/autoware_launch/autoware_launch/config/system/diagnostics/system.yaml:/opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/system.yaml:ro
+      - ${AUTOWARE_MAP_DIR:?AUTOWARE_MAP_DIR must point to external Autoware maps}:/home/aw/autoware_data/maps
+      - ${AUTOWARE_ML_MODELS_DIR:?AUTOWARE_ML_MODELS_DIR must point to external ML models}:/home/aw/autoware_data/ml_models
+      - ${VTD_MAP_DIR:?VTD_MAP_DIR must point to external VTD maps}:/home/aw/vtd_autoware_maps:ro
     deploy:
       resources:
         reservations:

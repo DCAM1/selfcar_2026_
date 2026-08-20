@@ -1,19 +1,66 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-# 스크립트가 있는 Autoware 폴더로 이동
-cd "$(dirname "$(readlink -f "$0")")"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+env_file="${repo_root}/.env"
 
-# Docker 컨테이너가 호스트 화면을 사용할 수 있도록 허용
-xhost +local:docker > /dev/null
+if [[ ! -f "${env_file}" ]]; then
+  echo "Missing ${env_file}. Run: cp .env.example .env" >&2
+  exit 1
+fi
 
-# 호스트 사용자 UID/GID 전달
+set -a
+# shellcheck disable=SC1090
+source "${env_file}"
+set +a
+
+require_dir() {
+  local variable_name="$1"
+  local directory="${!variable_name:-}"
+  if [[ -z "${directory}" || ! -d "${directory}" ]]; then
+    echo "${variable_name} must point to an existing directory: ${directory:-<unset>}" >&2
+    exit 1
+  fi
+}
+
+require_dir AUTOWARE_MAP_DIR
+require_dir AUTOWARE_ML_MODELS_DIR
+require_dir VTD_MAP_DIR
+
+map_relative_path="${VTD_MAP_RELATIVE_PATH:-HL_FMA_VTD_LivingLab_topology_fixed}"
+if [[ "${map_relative_path}" == /* || "${map_relative_path}" == *..* ]]; then
+  echo "VTD_MAP_RELATIVE_PATH must be a relative path without '..': ${map_relative_path}" >&2
+  exit 1
+fi
+if [[ ! -d "${VTD_MAP_DIR}/${map_relative_path}" ]]; then
+  echo "VTD map does not exist: ${VTD_MAP_DIR}/${map_relative_path}" >&2
+  exit 1
+fi
+
+vtd_image="${VTD_IMAGE:-selfcar-2026-vtd:local}"
+if ! docker image inspect "${vtd_image}" >/dev/null 2>&1; then
+  echo "Image ${vtd_image} is not available. Run ./scripts/build-vtd-image.sh first." >&2
+  exit 1
+fi
+
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 
-# Autoware Planning Simulator와 RViz 실행
-exec docker compose \
-  -f docker/examples/basic/dev-nvidia.compose.yaml \
+xhost_enabled=0
+if [[ -n "${DISPLAY:-}" ]] && command -v xhost >/dev/null 2>&1; then
+  xhost +local:docker >/dev/null
+  xhost_enabled=1
+fi
+cleanup() {
+  if (( xhost_enabled == 1 )); then
+    xhost -local:docker >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+docker compose \
+  --env-file "${env_file}" \
+  -f "${repo_root}/docker/vtd/compose.yaml" \
   run --rm autoware \
-  bash -lc 'source /opt/autoware/setup.bash; (until ros2 param set /planning/scenario_planning/external_velocity_limit_selector max_vel 16.67 >/dev/null 2>&1; do sleep 1; done; ros2 param set /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner max_vel 16.67 >/dev/null; ros2 param set /planning/scenario_planning/velocity_smoother max_vel 16.67 >/dev/null; ros2 topic pub --once --qos-durability transient_local /planning/scenario_planning/clear_velocity_limit autoware_internal_planning_msgs/msg/VelocityLimitClearCommand "{command: true, sender: rviz2(autoware_state_panel)}" >/dev/null; exec ros2 topic pub -r 1 /planning/scenario_planning/max_velocity autoware_internal_planning_msgs/msg/VelocityLimit "{max_velocity: 16.67, use_constraints: false, sender: autoware_run}" >/dev/null) & exec ros2 launch autoware_launch planning_simulator.launch.xml map_path:=/home/aw/vtd_autoware_maps/HL_FMA_VTD_LivingLab_topology_fixed vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit scenario_simulation:=true localization_sim_mode:=none use_sim_time:=true enable_all_modules_auto_mode:=true launch_run_out_module:=false'
+  bash -lc 'source /opt/ros/jazzy/setup.bash; source /opt/autoware/setup.bash; source /opt/selfcar_overlay/setup.bash; (until ros2 param set /planning/scenario_planning/external_velocity_limit_selector max_vel 16.67 >/dev/null 2>&1; do sleep 1; done; ros2 param set /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner max_vel 16.67 >/dev/null; ros2 param set /planning/scenario_planning/velocity_smoother max_vel 16.67 >/dev/null; ros2 topic pub --once --qos-durability transient_local /planning/scenario_planning/clear_velocity_limit autoware_internal_planning_msgs/msg/VelocityLimitClearCommand "{command: true, sender: rviz2(autoware_state_panel)}" >/dev/null; exec ros2 topic pub -r 1 /planning/scenario_planning/max_velocity autoware_internal_planning_msgs/msg/VelocityLimit "{max_velocity: 16.67, use_constraints: false, sender: autoware_run}" >/dev/null) & exec ros2 launch autoware_launch planning_simulator.launch.xml map_path:=/home/aw/vtd_autoware_maps/${VTD_MAP_RELATIVE_PATH} vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit scenario_simulation:=true localization_sim_mode:=none use_sim_time:=true enable_all_modules_auto_mode:=true launch_run_out_module:=false'

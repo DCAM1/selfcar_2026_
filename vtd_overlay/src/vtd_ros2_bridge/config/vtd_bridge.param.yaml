@@ -1,0 +1,100 @@
+/**:
+  ros__parameters:
+    use_sim_time: true
+
+    # VTD is a TCP server for these RDB streams.
+    rdb_host: 127.0.0.1
+    state_port: 48190
+    sensor_port: 48195
+    image_port: 48192
+
+    # Set -1 to select by ego_name, or to auto-select the first PLAYER when ego_name is empty.
+    ego_player_id: -1
+    ego_name: Ego
+    camera_id: -1
+    lidar_emitter_id: -1
+
+    map_frame: map
+    base_frame: base_link
+    lidar_frame: lidar_link
+    camera_frame: camera_optical_link
+
+    # Rigid 2-D transform: p_autoware = R(yaw) * p_vtd + translation.
+    # The fixed OpenDRIVE/Lanelet2 pair should normally use all zero values.
+    map_offset:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+
+    publish_clock: true
+    clock:
+      # Keep ROS/TF time monotonic across VTD Stop -> Start and bridge restarts.
+      anchor_to_system_time: true
+      reset_threshold_sec: 0.5
+      restart_gap_sec: 0.05
+    publish_map_to_base_tf: true
+    flip_image_vertical: false
+
+    traffic_light:
+      # Publish only IDs associated with an Autoware traffic-light regulatory element.
+      publish_unmapped_ids: false
+
+    control_timeout_sec: 0.5
+    watchdog_deceleration: -2.0
+    send_control_every_frame: true
+    report_autonomous_mode: true
+    # Report the accepted Autoware gear immediately while VTD applies the RDB command.
+    report_commanded_gear: true
+    # Keep status stable while the physical VTD indicator lamps blink on/off.
+    report_commanded_lights: true
+    default_autoware_gear: 2  # autoware_vehicle_msgs/GearCommand.DRIVE
+    publish_empty_occupancy_grid: true
+    publish_empty_obstacle_pointcloud: true
+    perception:
+      # Publish only sensor-local objects to Autoware perception. /vtd/objects remains unfiltered.
+      object_max_range_m: 200.0
+    occupancy_grid:
+      resolution: 0.5
+      width: 400
+      height: 400
+      publish_period_sec: 0.5
+    limits:
+      min_acceleration: -6.0
+      max_acceleration: 3.0
+      max_steering_angle: 0.7
+
+    # Enable for OptiXLidar / IG output that uses System V shared memory.
+    # Common keys in this VTD installation are 33130 (0x816a) and 33162.
+    # The container must run with --ipc=host.
+    shm:
+      key: 0
+      check_mask: 4
+      optix_return_index: 0
+      optix_camera_id: -1
+
+    camera:
+      fallback_fx: 0.0
+      fallback_fy: 0.0
+      fallback_cx: 0.0
+      fallback_cy: 0.0
+
+    topics:
+      odometry: /localization/kinematic_state
+      acceleration: /localization/acceleration
+      localization_initialization_state: /localization/initialization_state
+      occupancy_grid: /perception/occupancy_grid_map/map
+      obstacle_pointcloud: /perception/obstacle_segmentation/pointcloud
+      pointcloud: /sensing/lidar/top/pointcloud_raw
+      image: /sensing/camera/camera0/image_raw
+      camera_info: /sensing/camera/camera0/camera_info
+      ego_state: /vtd/ego_state
+      objects: /vtd/objects
+      traffic_lights: /vtd/traffic_lights
+      autoware_traffic_lights: /simulator/input/traffic_signals
+      road_speed_limit_source: /planning/scenario_planning/lane_driving/behavior_planning/path_with_lane_id
+      rviz_velocity_limit: /planning/scenario_planning/applied_velocity_limit
+      control_command: /control/command/control_cmd
+      gear_command: /control/command/gear_cmd
+      turn_indicators_command: /control/command/turn_indicators_cmd
+      hazard_lights_command: /control/command/hazard_lights_cmd

@@ -1,0 +1,135 @@
+schema: 1
+description: >-
+  Runtime configuration preserved from the clean autoware_launch nested
+  workspace and the tracked VTD Docker backup. Files under config/vtd are
+  copied into the corresponding /opt/autoware package-share path at image
+  build time; they are not host bind mounts.
+files:
+  - repository_path: config/vtd/control/autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: VTD bridge has no IMU path; preserve the local predicted-trajectory override.
+    sha256: 2b7dfcb5ab228d017fe0d3f84f5a7bb282d3b876986245abdc55256af377064b
+  - repository_path: config/vtd/control/trajectory_follower/lateral/mpc.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/control/trajectory_follower/lateral/mpc.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/control/trajectory_follower/lateral/mpc.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the VTD IONIQ 6 steering slew limit.
+    sha256: 3f775316211c219950b9ce29db8132776162e3f420d2029b0b3a3d328effd902
+  - repository_path: config/vtd/control/trajectory_follower/longitudinal/pid.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/control/trajectory_follower/longitudinal/pid.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/control/trajectory_follower/longitudinal/pid.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the VTD no-dry-steer behavior.
+    sha256: 43766d4e40257bd3b6db6d56cfb8d3f2f5def26a2f0db81ece2ddbc1219fc388
+  - repository_path: config/vtd/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve local VTD curve-tracking limits.
+    sha256: f7e417b55db6986b8ebef6c0d724d3166ee460d06a683d12a7b228ea99672de6
+  - repository_path: config/vtd/planning/scenario_planning/common/common.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/common.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/common/common.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the 60 km/h local planning limit.
+    sha256: a089a7c7099840c9043d048cd48a9967b4ffd133dfbad66f96893b51ab74d51d
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the curve-local swept-width margin.
+    sha256: 3bace7d182439e52104236008e702a3afab527a9d01acbe677056c51f2b938a3
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve local split-lane and short multi-lane behavior parameters.
+    sha256: be23f838b2afe00b445e258bd6af2b6a24aa2278ca223eee8e5348dc22d0ad3d
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve local traffic-light stop clearance.
+    sha256: 051c97402c341b20a93c77b8a310cd3d58c7f7c250486fb951c02433dc48ff0e
+  - repository_path: config/vtd/diagnostics/control.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/control.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/system/diagnostics/control.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the VTD diagnostic graph without the unavailable control-command gate.
+    sha256: 92c6f88253f1d5dd0c25c6e3bd44e04f23c597e87eae69e102bf59f8948fa33f
+  - repository_path: config/vtd/diagnostics/localization.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/localization.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/system/diagnostics/localization.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the VTD diagnostic publication timeout.
+    sha256: 57c12306a292d651861a6a5ebbcea8a3ec13f78023331d279e40cfda5eb4caaa
+  - repository_path: config/vtd/diagnostics/system.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/system.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/system/diagnostics/system.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the VTD diagnostic graph without the unavailable control-command gate.
+    sha256: 1eeaed50bcae9b96273ed6319103cf7219848e0f59f3af465847a3865562445e
+  - repository_path: config/vtd/rviz/autoware.rviz
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/rviz/autoware.rviz
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/rviz/autoware.rviz
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve the applied velocity-limit display topic.
+    sha256: cb0ed0965032e30a6666164c5c8c979462ba2788e2791b6653ad9edb930eee39
+  - repository_path: config/vtd/vehicle/vehicle_info.param.yaml
+    container_target: /opt/autoware/sample_vehicle_description/share/sample_vehicle_description/config/vehicle_info.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: vehicle/sample_vehicle_launch/sample_vehicle_description/config/vehicle_info.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve VTD IONIQ 6 wheelbase and steering limits.
+    sha256: 450c78963674b037cf80b0d571d28021ad6e3dd0ce02c80537f2bab6ff4bf22f
+  - repository_path: vtd_overlay/src/autoware_universe/planning/behavior_velocity_planner/autoware_behavior_velocity_traffic_light_module/config/traffic_light.param.yaml
+    container_target: /opt/selfcar_overlay/share/autoware_behavior_velocity_traffic_light_module/config/traffic_light.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_path: planning/behavior_velocity_planner/autoware_behavior_velocity_traffic_light_module/config/traffic_light.param.yaml
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    changed: true
+    purpose: Preserved local package configuration; launch-level traffic-light configuration is listed above.
+    sha256: 051c97402c341b20a93c77b8a310cd3d58c7f7c250486fb951c02433dc48ff0e
+  - repository_path: docker/files/cyclonedds.xml
+    container_target: /home/aw/cyclonedds.xml
+    upstream_origin: https://github.com/autowarefoundation/autoware.git
+    upstream_path: docker/files/cyclonedds.xml
+    upstream_commit: 10718787ba6e28f038a0cb29ff99cc627b5abfd2
+    changed: true
+    purpose: Preserve deterministic localhost DDS discovery for host-network VTD containers.
+    sha256: 1e5d541135bd9c07853ab0d419c9c2d632114570ebe882d9935110ab13017c9c
+  - repository_path: docker/files/default_adapi_vtd.param.yaml
+    container_target: /opt/autoware/autoware_default_adapi_universe/share/autoware_default_adapi_universe/config/default_adapi.param.yaml
+    upstream_origin: local-only; created for the VTD runtime
+    upstream_path: not-applicable
+    upstream_commit: not-applicable
+    changed: true
+    purpose: Preserve the VTD AD API diagnostic and motion defaults.
+    sha256: 04c716790882da4200c72a4b0fe97df85c0fd291ebde7e991f360fd9039d3ffd

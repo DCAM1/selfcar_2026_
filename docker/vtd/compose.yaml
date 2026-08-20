@@ -1,0 +1,68 @@
+services:
+  autoware:
+    image: ${VTD_IMAGE:-selfcar-2026-vtd:local}
+    # Image creation is intentionally separate: scripts/build-vtd-image.sh
+    # stages only the two required VTD headers before invoking Buildx. Keeping
+    # a build section here would make a direct `compose build` send the entire
+    # proprietary VTD installation as a build context.
+    network_mode: host
+    ipc: host
+    privileged: true
+    runtime: nvidia
+    stdin_open: true
+    tty: true
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      NVIDIA_DRIVER_CAPABILITIES: all
+      NVIDIA_VISIBLE_DEVICES: all
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+      QT_X11_NO_MITSHM: "1"
+      VTD_MAP_RELATIVE_PATH: ${VTD_MAP_RELATIVE_PATH:-HL_FMA_VTD_LivingLab_topology_fixed}
+    volumes:
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+      - type: bind
+        source: ${AUTOWARE_MAP_DIR:?AUTOWARE_MAP_DIR must point to external Autoware maps}
+        target: /home/aw/autoware_data/maps
+        read_only: true
+      - type: bind
+        source: ${AUTOWARE_ML_MODELS_DIR:?AUTOWARE_ML_MODELS_DIR must point to external ML models}
+        target: /home/aw/autoware_data/ml_models
+        read_only: true
+      - type: bind
+        source: ${VTD_MAP_DIR:?VTD_MAP_DIR must point to external VTD maps}
+        target: /home/aw/vtd_autoware_maps
+        read_only: true
+    command: ["bash"]
+
+  # Optional VTD bridge runtime. The bridge source is built into the image;
+  # only the external VTD installation is mounted at runtime.
+  vtd_bridge:
+    profiles: [vtd]
+    image: ${VTD_IMAGE:-selfcar-2026-vtd:local}
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      CYCLONEDDS_URI: file:///home/aw/cyclonedds.xml
+    volumes:
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+      - type: bind
+        source: ${VTD_INSTALL_DIR:?VTD_INSTALL_DIR must point to the external VTD installation}
+        target: /opt/vtd
+        read_only: true
+    command:
+      - bash
+      - -lc
+      - >-
+        source /opt/ros/jazzy/setup.bash &&
+        source /opt/autoware/setup.bash &&
+        source /opt/selfcar_overlay/setup.bash &&
+        export VTD_ROOT=/opt/vtd &&
+        exec ros2 launch vtd_ros2_bridge vtd_bridge.launch.py

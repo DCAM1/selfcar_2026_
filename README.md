@@ -44,6 +44,50 @@ Autoware is the world's leading open-source autonomous driving framework. Autowa
 > 1. **[Install Autoware](https://autowarefoundation.github.io/autoware-documentation/main/installation)** → Set up your environment and build the stack from source.
 > 2. **[Run the Quick Start demo](https://autowarefoundation.github.io/autoware-documentation/main/demos/)** → Drive a simulated vehicle in just a few minutes.
 
+## Selfcar 2026 VTD runtime
+
+This branch preserves the local VTD Autoware changes as complete ROS 2 source
+packages under `vtd_overlay/src/` and the runtime configuration under
+`config/vtd/`. The custom overlay is built into an immutable image; host-built
+`.so` files and host source/configuration mounts are not used. The base image
+is fixed to
+`ghcr.io/autowarefoundation/autoware@sha256:86d12e0f2504b058b54faead3a6113b5777c778899fc7a7c362e787808fdac24`.
+
+The tracked custom overlay packages are `autoware_mission_planner_universe`,
+the behavior-path planner, planner-common, lane-change and static-obstacle
+modules, `autoware_behavior_velocity_traffic_light_module`, and the local
+`vtd_ros2_bridge`. They are based on `autoware_universe` 0.52.0 at
+`6e477c645efec33f7909095eea684474e97f5e3d`; the launch configuration baseline
+is `autoware_launch` 0.52.0 at
+`f942598d44b5769353167c76b784323d5c14c8c7`.
+
+On a new Ubuntu 24.04 + ROS 2 Jazzy/Docker host, obtain the external map,
+model, and VTD installation assets, then run:
+
+```bash
+git clone https://github.com/DCAM1/selfcar_2026_.git
+cd selfcar_2026_
+git checkout chore/reproducible-vtd-source
+cp .env.example .env
+# Edit .env with the external asset paths.
+./scripts/verify-reproducibility.sh
+./scripts/build-vtd-image.sh
+./autoware
+```
+
+See [docs/build-and-run.md](docs/build-and-run.md),
+[docs/reproducibility-audit.md](docs/reproducibility-audit.md), and
+[`vtd_overlay/origin.yaml`](vtd_overlay/origin.yaml) for the exact upstream
+commits, external asset manifest, package provenance, and optional bridge
+runtime.
+
+Edit a package only under `vtd_overlay/src/`, then rerun
+`./scripts/build-vtd-image.sh`; use `./scripts/verify-reproducibility.sh` to
+check that source/configuration inputs remain tracked. The former direct host
+`.so` mounts and host source/configuration mounts have been removed. Pull
+requests run the static checks; the full image build is a manual workflow for a
+self-hosted NVIDIA runner.
+
 ## Documentation
 
 To learn more about using or developing Autoware, refer to the [Autoware documentation site](https://autowarefoundation.github.io/autoware-documentation/main/). You can find the source for the documentation in [autowarefoundation/autoware-documentation](https://github.com/autowarefoundation/autoware-documentation).
