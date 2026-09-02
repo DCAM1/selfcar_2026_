@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+env_file="${repo_root}/.env"
+
+if [[ ! -f "${env_file}" ]]; then
+  echo "Missing ${env_file}. Run: cp .env.example .env" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "${env_file}"
+set +a
+
+if [[ -z "${VTD_INSTALL_DIR:-}" || ! -d "${VTD_INSTALL_DIR}" ]]; then
+  echo "VTD_INSTALL_DIR must point to an existing directory: ${VTD_INSTALL_DIR:-<unset>}" >&2
+  exit 1
+fi
+
+vtd_image="${VTD_IMAGE:-selfcar-2026-vtd:local}"
+if ! docker image inspect "${vtd_image}" >/dev/null 2>&1; then
+  echo "Image ${vtd_image} is not available. Run ./scripts/build-vtd-image.sh first." >&2
+  exit 1
+fi
+
+exec docker compose \
+  --env-file "${env_file}" \
+  -f "${repo_root}/docker/vtd/compose.yaml" \
+  --profile vtd \
+  run --rm vtd_bridge

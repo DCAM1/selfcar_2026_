@@ -25,6 +25,7 @@ cp .env.example .env
 # VTD_MAP_DIR, VTD_MAP_RELATIVE_PATH, VTD_INSTALL_DIR and DISPLAY.
 ./scripts/verify-reproducibility.sh
 ./scripts/build-vtd-image.sh
+./vtd_bridge
 ./autoware
 ```
 
@@ -57,11 +58,13 @@ The bridge source is built into the same image. Its runtime still needs the
 external VTD installation:
 
 ```bash
-docker compose --env-file .env -f docker/vtd/compose.yaml --profile vtd run --rm vtd_bridge
+./vtd_bridge
 ```
 
-The bridge container mounts only `/opt/vtd` from `VTD_INSTALL_DIR` and the X11
-socket. It does not mount the bridge workspace or a host-built library.
+`./vtd_bridge` checks `.env`, `VTD_INSTALL_DIR`, and the locally built image,
+then starts the bridge through Docker Compose. The bridge container mounts only
+`/opt/vtd` from `VTD_INSTALL_DIR` and the X11 socket. It does not mount the
+bridge workspace or a host-built library.
 
 ## External assets
 
