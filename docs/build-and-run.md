@@ -44,6 +44,10 @@ named build context. The Dockerfile sources ROS 2 Jazzy and the pinned
 colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
+The overlay build runs packages sequentially with one compiler job. This keeps
+peak memory usage safe on the 16 GB target PC; the first build takes longer,
+while later builds reuse Docker's layer cache.
+
 The custom package prefixes are expected to resolve to
 `/opt/selfcar_overlay` after that setup file is sourced.
 

@@ -21,9 +21,12 @@ RUN --mount=type=bind,from=vtd,target=/opt/vtd,ro \
     source /opt/ros/jazzy/setup.bash && \
     source /opt/autoware/setup.bash && \
     export VTD_ROOT=/opt/vtd && \
+    export CMAKE_BUILD_PARALLEL_LEVEL=1 && \
+    export MAKEFLAGS=-j1 && \
     colcon list --base-paths /opt/selfcar-build/src && \
     colcon --log-base /tmp/selfcar_overlay_log build \
       --base-paths /opt/selfcar-build/src \
+      --executor sequential \
       --merge-install \
       --install-base /opt/selfcar_overlay \
       --build-base /tmp/selfcar_overlay_build \
