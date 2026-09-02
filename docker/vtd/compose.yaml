@@ -66,3 +66,4 @@ services:
         source /opt/selfcar_overlay/setup.bash &&
         export VTD_ROOT=/opt/vtd &&
         exec ros2 launch vtd_ros2_bridge vtd_bridge.launch.py
+        rdb_host:=${VTD_RDB_HOST:-127.0.0.1}

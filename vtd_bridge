@@ -5,6 +5,28 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 env_file="${repo_root}/.env"
 
+usage() {
+  cat <<'EOF'
+Usage: ./vtd_bridge [VTD_RDB_HOST]
+
+Start the VTD ROS 2 bridge from the repository-built Docker image.
+The RDB host defaults to VTD_RDB_HOST from .env, or 127.0.0.1.
+
+Examples:
+  ./vtd_bridge
+  ./vtd_bridge 192.168.0.20
+EOF
+}
+
+if (( $# > 1 )); then
+  usage >&2
+  exit 2
+fi
+if (( $# == 1 )) && [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
 if [[ ! -f "${env_file}" ]]; then
   echo "Missing ${env_file}. Run: cp .env.example .env" >&2
   exit 1
@@ -15,8 +37,15 @@ set -a
 source "${env_file}"
 set +a
 
-if [[ -z "${VTD_INSTALL_DIR:-}" || ! -d "${VTD_INSTALL_DIR}" ]]; then
-  echo "VTD_INSTALL_DIR must point to an existing directory: ${VTD_INSTALL_DIR:-<unset>}" >&2
+rdb_host="${1:-${VTD_RDB_HOST:-127.0.0.1}}"
+if [[ -z "${rdb_host}" || "${rdb_host}" =~ [[:space:]/] ]]; then
+  echo "Invalid VTD RDB host: ${rdb_host:-<empty>}" >&2
+  exit 1
+fi
+
+vtd_install_dir="${VTD_INSTALL_DIR:-}"
+if [[ -z "${vtd_install_dir}" || ! -d "${vtd_install_dir}" ]]; then
+  echo "VTD_INSTALL_DIR must point to an existing VTD installation: ${vtd_install_dir:-<unset>}" >&2
   exit 1
 fi
 
@@ -26,8 +55,21 @@ if ! docker image inspect "${vtd_image}" >/dev/null 2>&1; then
   exit 1
 fi
 
+for container_id in $(docker ps -q); do
+  container_command="$(docker inspect --format '{{json .Config.Cmd}}' "${container_id}")"
+  if [[ "${container_command}" == *vtd_ros2_bridge* ]]; then
+    container_name="$(docker inspect --format '{{.Name}}' "${container_id}")"
+    echo "A VTD bridge container is already running: ${container_name#/}" >&2
+    echo "Stop it before starting another bridge to avoid duplicate ROS/TF publishers." >&2
+    exit 1
+  fi
+done
+
+export VTD_RDB_HOST="${rdb_host}"
+
+echo "Starting VTD bridge: image=${vtd_image}, rdb_host=${VTD_RDB_HOST}"
 exec docker compose \
   --env-file "${env_file}" \
   -f "${repo_root}/docker/vtd/compose.yaml" \
   --profile vtd \
-  run --rm vtd_bridge
+  run --rm --name selfcar-vtd-bridge vtd_bridge

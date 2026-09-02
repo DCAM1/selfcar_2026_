@@ -62,9 +62,19 @@ external VTD installation:
 ```
 
 `./vtd_bridge` checks `.env`, `VTD_INSTALL_DIR`, and the locally built image,
-then starts the bridge through Docker Compose. The bridge container mounts only
-`/opt/vtd` from `VTD_INSTALL_DIR` and the X11 socket. It does not mount the
-bridge workspace or a host-built library.
+then starts the bridge through Docker Compose. The RDB server defaults to
+`VTD_RDB_HOST` from `.env`, or `127.0.0.1` when the variable is omitted. A
+one-time address can be supplied without editing files:
+
+```bash
+./vtd_bridge 192.168.0.20
+```
+
+The launcher refuses to start while another VTD bridge container is running,
+which prevents duplicate ROS topic and TF publishers.
+
+The bridge container mounts only `/opt/vtd` from `VTD_INSTALL_DIR` and the X11
+socket. It does not mount the bridge workspace or a host-built library.
 
 ## External assets
 
