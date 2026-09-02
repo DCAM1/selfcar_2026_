@@ -23,7 +23,8 @@ public:
   RdbTcpClient(
     std::string label, std::string host, int port, MessageCallback message_callback,
     ConnectionCallback connection_callback,
-    std::chrono::milliseconds reconnect_delay = std::chrono::milliseconds(1000));
+    std::chrono::milliseconds reconnect_delay = std::chrono::milliseconds(1000),
+    bool decode_rdb_stream = true);
   ~RdbTcpClient();
 
   RdbTcpClient(const RdbTcpClient &) = delete;
@@ -47,6 +48,7 @@ private:
   MessageCallback message_callback_;
   ConnectionCallback connection_callback_;
   std::chrono::milliseconds reconnect_delay_;
+  bool decode_rdb_stream_;
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};

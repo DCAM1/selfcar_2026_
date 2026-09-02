@@ -152,6 +152,8 @@ public:
     state_port_ = declare_parameter<int>("state_port", RDB_DEFAULT_PORT);
     sensor_port_ = declare_parameter<int>("sensor_port", 48195);
     image_port_ = declare_parameter<int>("image_port", RDB_IMAGE_PORT);
+    participant_control_port_ =
+        declare_parameter<int>("participant_control_port", 0);
     ego_player_id_ = declare_parameter<int>("ego_player_id", -1);
     ego_name_ = declare_parameter<std::string>("ego_name", "Ego");
     camera_id_ = declare_parameter<int>("camera_id", -1);
@@ -399,6 +401,14 @@ public:
     state_client_ = make_client("state/control", state_port_);
     sensor_client_ = make_client("sensor", sensor_port_);
     image_client_ = make_client("image", image_port_);
+    participant_control_client_ = std::make_unique<RdbTcpClient>(
+        "HL_VTD participant control", host_, participant_control_port_, nullptr,
+        [this](const bool connected) {
+          RCLCPP_INFO(get_logger(), "HL_VTD participant control channel %s (%s:%d)",
+                      connected ? "connected" : "disconnected", host_.c_str(),
+                      participant_control_port_);
+        },
+        std::chrono::milliseconds(1000), false);
     shm_reader_ = std::make_unique<RdbShmReader>(
         shm_key_, static_cast<std::uint32_t>(shm_check_mask_),
         [this](const std::uint8_t *data, const std::size_t size) {
@@ -417,16 +427,21 @@ public:
     state_client_->start();
     sensor_client_->start();
     image_client_->start();
+    participant_control_client_->start();
     shm_reader_->start();
 
     RCLCPP_INFO(get_logger(),
-                "VTD bridge ready: host=%s state=%d sensor=%d image=%d "
+                "VTD bridge ready: host=%s state=%d sensor=%d image=%d participant_control=%d "
                 "ego_player_id=%d",
                 host_.c_str(), state_port_, sensor_port_, image_port_,
+                participant_control_port_,
                 ego_player_id_);
   }
 
   ~VtdBridgeNode() override {
+    if (participant_control_client_) {
+      participant_control_client_->stop();
+    }
     if (shm_reader_) {
       shm_reader_->stop();
     }
@@ -1884,6 +1899,27 @@ private:
       driver.validityFlags |= RDB_DRIVER_INPUT_VALIDITY_TGT_ACCEL |
                               RDB_DRIVER_INPUT_VALIDITY_TGT_STEERING;
     }
+
+    // The 00_HL_VTD dynamics plug-in owns the final vehicle input and accepts
+    // a packed, headerless participant command on TCP 9910:
+    // float steeringTgt, float accelTgt, uint8 turnSignal (0/1/2).
+    // Continue sending standard RDB_DRIVER_CTRL below for stock VTD setups.
+    if (participant_control_client_ && participant_control_client_->connected()) {
+      std::vector<std::uint8_t> participant_packet(9U, 0U);
+      std::memcpy(participant_packet.data(), &driver.steeringTgt, sizeof(float));
+      std::memcpy(participant_packet.data() + sizeof(float), &driver.accelTgt,
+                  sizeof(float));
+      if (command.hazard_lights != HazardLightsCommand::ENABLE) {
+        if (command.turn_indicators == TurnIndicatorsCommand::ENABLE_LEFT) {
+          participant_packet[8] = 1U;
+        } else if (command.turn_indicators == TurnIndicatorsCommand::ENABLE_RIGHT) {
+          participant_packet[8] = 2U;
+        }
+      }
+      if (participant_control_client_->send_bytes(participant_packet)) {
+        ++participant_control_packets_;
+      }
+    }
     const auto packet = make_driver_control_message(sim_time, frame_no, driver);
     if (state_client_->send_bytes(packet)) {
       ++control_packets_;
@@ -1963,6 +1999,10 @@ private:
     append_value(status, "session_resets", session_resets_.load());
     append_value(status, "sim_time_offset_sec", sim_time_offset_.load());
     append_value(status, "control_packets", control_packets_.load());
+    append_value(status, "participant_control_connected",
+                 participant_control_client_ && participant_control_client_->connected() ? 1 : 0);
+    append_value(status, "participant_control_packets",
+                 participant_control_packets_.load());
     append_value(status, "parse_errors", parse_errors_.load());
     append_value(status, "watchdog_active", watchdog_active_.load() ? 1 : 0);
     {
@@ -1982,6 +2022,7 @@ private:
   int state_port_{};
   int sensor_port_{};
   int image_port_{};
+  int participant_control_port_{};
   int ego_player_id_{};
   std::string ego_name_;
   int camera_id_{};
@@ -2035,6 +2076,7 @@ private:
   std::unique_ptr<RdbTcpClient> state_client_;
   std::unique_ptr<RdbTcpClient> sensor_client_;
   std::unique_ptr<RdbTcpClient> image_client_;
+  std::unique_ptr<RdbTcpClient> participant_control_client_;
   std::unique_ptr<RdbShmReader> shm_reader_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
@@ -2116,6 +2158,7 @@ private:
   std::atomic<std::uint64_t> clock_updates_{0U};
   std::atomic<std::uint64_t> session_resets_{0U};
   std::atomic<std::uint64_t> control_packets_{0U};
+  std::atomic<std::uint64_t> participant_control_packets_{0U};
   std::atomic<std::uint64_t> parse_errors_{0U};
   std::atomic<bool> watchdog_active_{false};
 };

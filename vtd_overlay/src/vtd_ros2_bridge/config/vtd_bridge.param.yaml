@@ -7,6 +7,9 @@
     state_port: 48190
     sensor_port: 48195
     image_port: 48192
+    # 00_HL_VTD's custom dynamics plug-in consumes packed control commands
+    # here. Set to 0 for stock VTD setups that only use RDB_DRIVER_CTRL.
+    participant_control_port: 9910
 
     # Set -1 to select by ego_name, or to auto-select the first PLAYER when ego_name is empty.
     ego_player_id: -1

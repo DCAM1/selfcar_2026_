@@ -16,7 +16,7 @@ VTD 2025.2의 RDB 데이터를 ROS 2/Autoware 토픽으로 변환하고, Autowar
 | VTD → Autoware | `RDB_TRAFFIC_LIGHT` extended | `/simulator/input/traffic_signals` → `/perception/traffic_light_recognition/traffic_signals` |
 | Autoware planning → RViz | 현재 도로의 맵 최고속도 | `/planning/scenario_planning/applied_velocity_limit` (표시 전용) |
 | VTD SHM → ROS | OptiXLidar `CUSTOM_OPTIX_START` + `RGBA32F` | `sensor_msgs/PointCloud2` |
-| Autoware → VTD | control/gear/turn-indicator/hazard command topics | `RDB_DRIVER_CTRL` (`accelTgt`, `steeringTgt`, `gear`, `flags`) |
+| Autoware → VTD | control/gear/turn-indicator/hazard command topics | `RDB_DRIVER_CTRL` and, for `00_HL_VTD`, TCP 9910 participant control (`accelTgt`, `steeringTgt`, turn signal) |
 
 인터페이스 API의 상태 필드는 다음 ROS 토픽으로도 그대로 제공됩니다.
 
@@ -61,10 +61,11 @@ ego와 가장 가까운 lane ID를 찾고, 그 lane의 reference-path 최고속�
   --audit-report /tmp/traffic_light_cleanup_report.json
 ```
 
-엑셀에 적힌 TCP 9910, UDP 9912, RTSP 8554는 외부 참가자/Host 연결 포트입니다. 현재
-실행본은 VTD 로컬 RDB(48190/48185/48192, SHM)를 사용하고 ROS 토픽으로 변환합니다.
-엑셀에는 해당 포트의 패킷 직렬화 형식이 정의되어 있지 않으므로, 그 바이너리 네트워크
-프로토콜을 임의로 추가하지 않았습니다.
+TCP 9910은 `00_HL_VTD` 동역학 플러그인의 헤더 없는 참가자 인터페이스입니다.
+브리지는 이 포트의 1109-byte 상태 스트림을 계속 소비하고, 설치된 플러그인 규격인
+9-byte little-endian 제어(`float steering`, `float acceleration`, `uint8 turn signal`)를
+매 VTD 프레임 송신합니다. 상태·객체·신호등은 전체 RDB(48190)에서 계속 받습니다.
+UDP 9912와 RTSP 8554는 각각 외부 LiDAR와 카메라 스트림용입니다.
 
 `accelTgt`와 Autoware acceleration은 모두 m/s²이고, `steeringTgt`와 Autoware `steering_tire_angle`은 모두 앞바퀴 등가 조향각(rad)입니다. 따라서 steering wheel ratio나 pedal percentage로 바꾸지 않습니다.
 

@@ -30,7 +30,7 @@ RUN --mount=type=bind,from=vtd,target=/opt/vtd,ro \
       --merge-install \
       --install-base /opt/selfcar_overlay \
       --build-base /tmp/selfcar_overlay_build \
-      --cmake-args -DCMAKE_BUILD_TYPE=Release && \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF && \
     rm -rf /tmp/selfcar_overlay_build /tmp/selfcar_overlay_log
 
 # Install tracked VTD configuration into the same package-share locations the
