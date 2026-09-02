@@ -5,6 +5,38 @@ description: >-
   copied into the corresponding /opt/autoware package-share path at image
   build time; they are not host bind mounts.
 files:
+  - repository_path: config/vtd/planning/preset/vtd_low_memory_preset.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/preset/vtd_low_memory_preset.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/preset/default_preset.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Disable parking and remaining-distance modules in the memory-constrained VTD runtime.
+    sha256: 0ca886c3408d73ba7d43e16152afec8e7f43fcd9f66b943c7be6abc262186fe9
+  - repository_path: config/vtd/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Preserve motion output for VTD objects that are intentionally classified as UNKNOWN.
+    sha256: 578cd8fcb52d1fdb3161691b0c57505d2b812e2c5ecc3e4c514a3ecffd043064
+  - repository_path: config/vtd/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Route UNKNOWN bounding boxes through PolygonTracker so their VTD dimensions are not clamped to 1 m.
+    sha256: e8a7e0bd100ec6cf64f518c0c8d141ba5e08e492cbdd92e465e923c66803941b
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_stop.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_stop.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_stop.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Enable collision-stop planning from the synthetic VTD obstacle pointcloud.
+    sha256: 6d9c98db6c5287fad446b158f55339d700430bead2c3562836f558617c213cd2
   - repository_path: config/vtd/control/autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git

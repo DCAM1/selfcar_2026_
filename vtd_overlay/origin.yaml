@@ -120,7 +120,7 @@ packages:
       - src/vtd_bridge_node.cpp
       - test/fake_rdb_server.py
       - test/test_rdb_codec.cpp
-    source_tree_sha256: d124187bd42471183b346c6e2992642e49e1e2bc7200b26e3ffef68658786285
+    source_tree_sha256: 0857a6a316c8e75dea4a06fc6c458500ff1494ea31aa7e25376d6d32c75a48dd
     license: Apache-2.0
 local_tools:
   - name: map_tools

@@ -114,14 +114,15 @@ ros2 launch vtd_ros2_bridge vtd_bridge.launch.py
 
 ## 좌표 동기화
 
-VTD inertial과 ROS는 모두 x-forward/y-left/z-up인 우수 좌표계입니다. 현재 OpenDRIVE에서 만든 Lanelet2는 x-y를 그대로 보존하지만, Lanelet2 elevation은 정규화되어 있고 VTD의 Ego 시작 Z는 `42.22497672845542 m`입니다. 그래서 기본 LivingLab 설정은 x/y/yaw는 identity, z만 아래처럼 보정합니다.
+VTD inertial과 ROS는 모두 x-forward/y-left/z-up인 우수 좌표계입니다. 현재 Lanelet2 경로는 2-D 기준으로 사용하므로 `flatten_z: true`가 기본이며, ego TF/odometry와 VTD 객체 pose의 z를 0으로 발행합니다. 객체 높이는 `Shape.dimensions.z`와 합성 obstacle pointcloud에 그대로 보존됩니다.
 
 ```yaml
 map_offset:
   x: 0.0
   y: 0.0
-  z: -42.22497672845542
+  z: 0.0
   yaw: 0.0
+flatten_z: true
 ```
 
 VTD 시나리오 원점과 Lanelet2 원점이 다르면 2-D rigid transform만 보정합니다.
@@ -143,7 +144,7 @@ p_autoware = R(map_offset.yaw) · p_vtd + [map_offset.x, map_offset.y, map_offse
 - Autoware가 미교전 또는 명령 종료를 나타낼 때 보내는 `NO_COMMAND`는 VTD에서 직전 램프 상태가 남지 않도록 `DISABLE`로 정규화합니다.
 - 기본 `report_commanded_lights: true`는 VTD 램프의 실제 점멸 주기에 따라 status가 매번 DISABLE로 흔들리지 않도록 수락된 명령 상태를 유지합니다. VTD `RDB_VEHICLE_SYSTEMS.lightMask`를 직접 상태로 쓰려면 `false`로 설정합니다.
 - `scenario_simulation:=true`에서는 Autoware occupancy-grid 노드가 비활성화되므로, 브릿지가 ego 주변의 빈 점유 격자를 발행해 behavior path planner의 입력 계약을 만족시킵니다. 실제 센서 기반 점유 격자를 연결할 때는 `publish_empty_occupancy_grid: false`로 바꿉니다.
-- 같은 모드에서는 obstacle segmentation 출력도 없으므로 빈 obstacle point cloud를 함께 발행합니다. VTD LiDAR/실제 perception 출력을 연결하면 `publish_empty_obstacle_pointcloud: false`로 바꿉니다.
+- 같은 모드에서는 VTD 객체 바운딩박스의 모서리를 합성 obstacle pointcloud로 발행합니다. 객체가 없을 때만 빈 cloud가 되며, VTD LiDAR/실제 perception 출력을 별도로 연결하면 `publish_empty_obstacle_pointcloud: false`로 바꿉니다.
 - 현재 시나리오는 `<Description ... Control="external" Name="Ego"/>`이므로 기본값은 `ego_player_id: -1`, `ego_name: Ego`입니다. 브릿지가 첫 object-state에서 실제 player ID를 찾은 후 그 ID로 제어합니다.
 - Autoware의 steering tire rotation rate는 VTD의 `steeringSpeed`(steering-wheel 계열 값)와 의미가 같다고 보장되지 않아 보내지 않습니다. 앞바퀴 target angle만 사용합니다.
 - `/clock`은 RDB 패키지 수가 아니라 `state/control`의 고유 frame마다 한 번만 게시합니다. `send_control_every_frame: true`에서도 조향·램프 subscriber callback이 같은 frame에 패킷을 추가 전송하지 않으므로 VTD 제어는 frame당 한 번입니다.

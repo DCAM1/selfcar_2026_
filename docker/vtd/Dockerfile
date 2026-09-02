@@ -35,6 +35,12 @@ RUN --mount=type=bind,from=vtd,target=/opt/vtd,ro \
 # making the configuration part of the immutable image layer.
 RUN install -Dm644 /opt/selfcar-config/control/autonomous_emergency_braking/autonomous_emergency_braking.param.yaml \
       /opt/autoware/autoware_launch/share/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml && \
+    install -Dm644 /opt/selfcar-config/planning/preset/vtd_low_memory_preset.yaml \
+      /opt/autoware/autoware_launch/share/autoware_launch/config/planning/preset/vtd_low_memory_preset.yaml && \
+    install -Dm644 /opt/selfcar-config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml \
+      /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml && \
+    install -Dm644 /opt/selfcar-config/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml \
+      /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml && \
     install -Dm644 /opt/selfcar-config/control/trajectory_follower/lateral/mpc.param.yaml \
       /opt/autoware/autoware_launch/share/autoware_launch/config/control/trajectory_follower/lateral/mpc.param.yaml && \
     install -Dm644 /opt/selfcar-config/control/trajectory_follower/longitudinal/pid.param.yaml \
@@ -49,6 +55,8 @@ RUN install -Dm644 /opt/selfcar-config/control/autonomous_emergency_braking/auto
       /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml && \
     install -Dm644 /opt/selfcar-config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml \
       /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml && \
+    install -Dm644 /opt/selfcar-config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_stop.param.yaml \
+      /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_stop.param.yaml && \
     install -Dm644 /opt/selfcar-config/diagnostics/control.yaml \
       /opt/autoware/autoware_launch/share/autoware_launch/config/system/diagnostics/control.yaml && \
     install -Dm644 /opt/selfcar-config/diagnostics/localization.yaml \

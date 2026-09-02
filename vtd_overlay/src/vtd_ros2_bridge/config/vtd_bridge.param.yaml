@@ -26,6 +26,9 @@
       y: 0.0
       z: 0.0
       yaw: 0.0
+    # Lanelet2 paths are 2-D (z=0). Publish VTD ego/object poses on the same plane.
+    # Object height is still retained in Shape and in the synthetic obstacle pointcloud.
+    flatten_z: true
 
     publish_clock: true
     clock:

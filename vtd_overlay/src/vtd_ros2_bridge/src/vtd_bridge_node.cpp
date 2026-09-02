@@ -171,6 +171,7 @@ public:
     map_offset_y_ = declare_parameter<double>("map_offset.y", 0.0);
     map_offset_z_ = declare_parameter<double>("map_offset.z", 0.0);
     map_yaw_offset_ = declare_parameter<double>("map_offset.yaw", 0.0);
+    flatten_z_ = declare_parameter<bool>("flatten_z", true);
     publish_clock_ = declare_parameter<bool>("publish_clock", true);
     anchor_clock_to_system_time_ =
         declare_parameter<bool>("clock.anchor_to_system_time", true);
@@ -699,7 +700,7 @@ private:
       const auto position = map_position(base->pos.x, base->pos.y, base->pos.z);
       object.x = static_cast<float>(position[0]);
       object.y = static_cast<float>(position[1]);
-      object.z = static_cast<float>(position[2]);
+      object.z = flatten_z_ ? 0.0F : static_cast<float>(position[2]);
       object.heading = static_cast<float>(base->pos.h + map_yaw_offset_);
       object.length = base->geo.dimX;
       object.width = base->geo.dimY;
@@ -1178,7 +1179,8 @@ private:
       detected.classification.front().probability = 1.0F;
       detected.kinematics.pose_with_covariance.pose.position.x = center[0];
       detected.kinematics.pose_with_covariance.pose.position.y = center[1];
-      detected.kinematics.pose_with_covariance.pose.position.z = center[2];
+      detected.kinematics.pose_with_covariance.pose.position.z =
+          flatten_z_ ? 0.0F : center[2];
       tf2::Quaternion orientation;
       orientation.setRPY(0.0, 0.0, object.heading);
       detected.kinematics.pose_with_covariance.pose.orientation =
@@ -1238,7 +1240,10 @@ private:
                          const RDB_OBJECT_STATE_BASE_t &base,
                          const RDB_OBJECT_STATE_EXT_t *extension) {
     const auto stamp = message_stamp(message.simTime);
-    const auto api_position = map_position(base.pos.x, base.pos.y, base.pos.z);
+    auto api_position = map_position(base.pos.x, base.pos.y, base.pos.z);
+    if (flatten_z_) {
+      api_position[2] = 0.0;
+    }
     auto position = api_position;
     const double map_heading = base.pos.h + map_yaw_offset_;
     position[0] += kEgoTfForwardOffsetM * std::cos(map_heading);
@@ -1995,6 +2000,7 @@ private:
   double map_offset_y_{};
   double map_offset_z_{};
   double map_yaw_offset_{};
+  bool flatten_z_{};
   bool publish_clock_{};
   bool anchor_clock_to_system_time_{};
   double clock_reset_threshold_sec_{};
