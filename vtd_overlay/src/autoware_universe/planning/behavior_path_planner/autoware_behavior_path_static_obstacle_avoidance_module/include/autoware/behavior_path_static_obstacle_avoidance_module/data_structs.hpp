@@ -497,7 +497,11 @@ struct ObjectData  // avoidance target
   // is clip targe.
   bool is_clip_target{false};
 
-  // object direction.
+  // Preferred object direction determined from the lateral position.
+  Direction preferred_direction{Direction::NONE};
+
+  // Object direction used to generate the avoidance shift. This is normally the preferred
+  // direction, but may be switched when only the opposite side has enough drivable space.
   Direction direction{Direction::NONE};
 
   // overhang points (sort by distance)

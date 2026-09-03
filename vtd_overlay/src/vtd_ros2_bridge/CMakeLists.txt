@@ -62,9 +62,12 @@ message(STATUS "Using VTD RDB headers from ${VTD_RDB_INCLUDE_DIR}")
 message(STATUS "Using VTD common headers from ${VTD_COMMON_INCLUDE_DIR}")
 
 add_library(vtd_rdb_core
+  src/hlvtd_control_client.cpp
+  src/hlvtd_lidar_codec.cpp
   src/rdb_codec.cpp
   src/rdb_shm_reader.cpp
   src/rdb_tcp_client.cpp
+  src/rdb_udp_receiver.cpp
 )
 target_include_directories(vtd_rdb_core
   PUBLIC
@@ -100,7 +103,14 @@ ament_target_dependencies(vtd_bridge_node
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(vtd_bridge_node "${cpp_typesupport_target}")
 
-install(TARGETS vtd_rdb_core vtd_bridge_node
+add_executable(vtd_lidar_node src/vtd_lidar_node.cpp)
+target_link_libraries(vtd_lidar_node vtd_rdb_core)
+ament_target_dependencies(vtd_lidar_node
+  rclcpp
+  sensor_msgs
+)
+
+install(TARGETS vtd_rdb_core vtd_bridge_node vtd_lidar_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -115,10 +125,19 @@ install(PROGRAMS
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_hlvtd_lidar_codec test/test_hlvtd_lidar_codec.cpp)
+  if(TARGET test_hlvtd_lidar_codec)
+    target_link_libraries(test_hlvtd_lidar_codec vtd_rdb_core)
+  endif()
   ament_add_gtest(test_rdb_codec test/test_rdb_codec.cpp)
   if(TARGET test_rdb_codec)
     target_include_directories(test_rdb_codec PRIVATE ${VTD_RDB_INCLUDE_DIR} ${VTD_COMMON_INCLUDE_DIR})
     target_link_libraries(test_rdb_codec vtd_rdb_core)
+  endif()
+  ament_add_gtest(test_rdb_udp_receiver test/test_rdb_udp_receiver.cpp)
+  if(TARGET test_rdb_udp_receiver)
+    target_include_directories(test_rdb_udp_receiver PRIVATE ${VTD_RDB_INCLUDE_DIR} ${VTD_COMMON_INCLUDE_DIR})
+    target_link_libraries(test_rdb_udp_receiver vtd_rdb_core)
   endif()
 endif()
 

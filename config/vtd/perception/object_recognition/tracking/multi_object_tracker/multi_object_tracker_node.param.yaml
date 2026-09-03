@@ -16,16 +16,16 @@
       polygon_tracker:
         enable_velocity_estimation: true
         enable_motion_output:
-          # VTD intentionally exposes every object as UNKNOWN. Preserve motion output.
+          # VTD intentionally exposes every object as UNKNOWN. Only that class may emit motion.
           unknown:    true
-          car:        true
-          truck:      true
-          bus:        true
-          trailer:    true
-          motorcycle: true
-          bicycle:    true
-          pedestrian: true
-          animal:     true
+          car:        false
+          truck:      false
+          bus:        false
+          trailer:    false
+          motorcycle: false
+          bicycle:    false
+          pedestrian: false
+          animal:     false
           hazard:     false
       static_tracker:
         convert_polygon_to_bbox: false

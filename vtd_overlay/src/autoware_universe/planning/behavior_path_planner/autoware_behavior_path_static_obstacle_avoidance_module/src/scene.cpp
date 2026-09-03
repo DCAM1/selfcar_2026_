@@ -228,10 +228,6 @@ void StaticObstacleAvoidanceModule::fillFundamentalData(
     return;
   }
 
-  // reference pose
-  data.reference_pose =
-    utils::getUnshiftedEgoPose(getEgoPose(), helper_->getPreviousSplineShiftPath());
-
   // lanelet info
   data.current_lanelets = utils::static_obstacle_avoidance::getCurrentLanesFromPath(
     getPreviousModuleOutput().reference_path, planner_data_);
@@ -240,6 +236,16 @@ void StaticObstacleAvoidanceModule::fillFundamentalData(
     RCLCPP_WARN_THROTTLE(getLogger(), *clock_, 5000, "Current lanelets is empty. Skip processing.");
     return;
   }
+
+  const bool reference_lane_changed =
+    !isDrivingSameLane(helper_->getPreviousDrivingLanes(), data.current_lanelets);
+  if (reference_lane_changed) {
+    rebaseToNewReferenceLane(getPreviousModuleOutput().path, data.current_lanelets);
+  }
+
+  // reference pose. After a lane rebase the previous shifted path is zero-offset in the new lane.
+  data.reference_pose =
+    utils::getUnshiftedEgoPose(getEgoPose(), helper_->getPreviousSplineShiftPath());
 
   data.extend_lanelets = utils::static_obstacle_avoidance::getExtendLanes(
     data.current_lanelets, getEgoPose(), planner_data_);
@@ -322,15 +328,9 @@ void StaticObstacleAvoidanceModule::fillFundamentalData(
       parameters_->use_freespace_areas, false);
   }
 
-  // reference path
-  if (isDrivingSameLane(helper_->getPreviousDrivingLanes(), data.current_lanelets)) {
-    data.reference_path_rough = extendBackwardLength(getPreviousModuleOutput().path);
-  } else {
-    data.reference_path_rough = getPreviousModuleOutput().path;
-    RCLCPP_WARN_THROTTLE(
-      getLogger(), *clock_, 3000,
-      "Previous module lane is updated. Don't use latest reference path.");
-  }
+  // reference path. A changed lane has already been rebased above, so the latest path can be used
+  // without carrying the old lane's lateral offset into this reference frame.
+  data.reference_path_rough = extendBackwardLength(getPreviousModuleOutput().path);
 
   // resampled reference path
   data.reference_path = utils::resamplePathWithSpline(
@@ -385,6 +385,55 @@ void StaticObstacleAvoidanceModule::fillFundamentalData(
 
   // set base path
   path_shifter_.setPath(data.reference_path);
+}
+
+void StaticObstacleAvoidanceModule::rebaseToNewReferenceLane(
+  const PathWithLaneId & reference_path, const lanelet::ConstLanelets & current_lanelets)
+{
+  using utils::static_obstacle_avoidance::toShiftedPath;
+
+  if (reference_path.points.empty()) {
+    return;
+  }
+
+  const double absorbed_shift = helper_->getEgoShift();
+
+  // The old maneuver is represented by the new reference lane itself. Finish its RTC entries and
+  // discard old-frame shift lines before evaluating another obstacle on the new lane.
+  const auto finish_registered_shift = [&](const std::string & direction,
+                                           const RegisteredShiftLineArray & shifts) {
+    for (const auto & shift : shifts) {
+      const auto & rtc = rtc_interface_ptr_map_.at(direction);
+      if (rtc->isRegistered(shift.uuid)) {
+        rtc->updateCooperateStatus(
+          shift.uuid, true, State::SUCCEEDED, std::numeric_limits<double>::lowest(),
+          std::numeric_limits<double>::lowest(), clock_->now());
+      }
+    }
+  };
+  finish_registered_shift("left", left_shift_array_);
+  finish_registered_shift("right", right_shift_array_);
+  removeCandidateRTCStatus();
+
+  unlockNewModuleLaunch();
+  left_shift_array_.clear();
+  right_shift_array_.clear();
+  generator_.reset();
+  path_shifter_ = PathShifter{};
+  path_shifter_.setPath(reference_path);
+
+  const auto zero_shift_path = toShiftedPath(reference_path);
+  helper_->setPreviousReferencePath(reference_path);
+  helper_->setPreviousSplineShiftPath(zero_shift_path);
+  helper_->setPreviousLinearShiftPath(zero_shift_path);
+  helper_->setPreviousDrivingLanes(current_lanelets);
+  ignore_signal_ids_.clear();
+
+  RCLCPP_INFO(
+    getLogger(),
+    "Reference lane changed. Rebased avoidance state by absorbing %.3f m into the new reference "
+    "lane.",
+    absorbed_shift);
 }
 
 void StaticObstacleAvoidanceModule::fillAvoidanceTargetObjects(
@@ -508,6 +557,7 @@ ObjectData StaticObstacleAvoidanceModule::createObjectData(
   object_data.direction = calc_lateral_deviation(object_closest_pose, object_pose.position) > 0.0
                             ? Direction::LEFT
                             : Direction::RIGHT;
+  object_data.preferred_direction = object_data.direction;
 
   return object_data;
 }

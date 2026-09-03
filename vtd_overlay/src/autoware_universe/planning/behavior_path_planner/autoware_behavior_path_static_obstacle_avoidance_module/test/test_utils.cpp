@@ -389,6 +389,27 @@ TEST(TestUtils, isNoNeedAvoidanceBehavior)
   }
 }
 
+TEST(TestUtils, fillAvoidanceNecessityUsesPreferredDirection)
+{
+  auto object_data = ObjectData{};
+  object_data.object.classification.emplace_back(
+    autoware_perception_msgs::build<ObjectClassification>()
+      .label(ObjectClassification::TRUCK)
+      .probability(1.0));
+  object_data.distance_factor = 1.0;
+  object_data.preferred_direction = Direction::LEFT;
+  object_data.direction = Direction::RIGHT;
+  object_data.overhang_points = {
+    {1.5, create_point(0.0, 1.5, 0.0)},
+    {0.2, create_point(0.0, 0.2, 0.0)},
+    {-1.0, create_point(0.0, -1.0, 0.0)}};
+
+  fillAvoidanceNecessity(object_data, {}, 2.0, get_parameters());
+
+  EXPECT_TRUE(object_data.avoid_required);
+  EXPECT_EQ(object_data.direction, Direction::RIGHT);
+}
+
 TEST(TestUtils, getAvoidMargin)
 {
   const auto parameters = get_parameters();

@@ -1339,6 +1339,59 @@ double getRoadShoulderDistance(
 
   return std::get<0>(intersects.front());
 }
+
+void updateRoadShoulderDistanceAndAvoidMargin(
+  ObjectData & object, const AvoidancePlanningData & data,
+  const std::shared_ptr<const PlannerData> & planner_data,
+  const std::shared_ptr<AvoidanceParameters> & parameters)
+{
+  if (object.preferred_direction == Direction::NONE) {
+    object.preferred_direction = object.direction;
+  }
+  if (object.preferred_direction == Direction::NONE) {
+    throw std::logic_error("preferred object direction is not initialized. something wrong.");
+  }
+
+  const auto sort_overhang_points = [&object]() {
+    std::sort(
+      object.overhang_points.begin(), object.overhang_points.end(),
+      [&object](const auto & a, const auto & b) {
+        return isOnRight(object) ? b.first < a.first : a.first < b.first;
+      });
+  };
+  const auto evaluate = [&](const Direction direction) {
+    object.direction = direction;
+    sort_overhang_points();
+    object.narrowest_place.reset();
+    object.to_road_shoulder_distance = getRoadShoulderDistance(object, data, planner_data);
+    object.avoid_margin = getAvoidMargin(object, planner_data, parameters);
+  };
+
+  evaluate(object.preferred_direction);
+  if (object.avoid_margin.has_value()) {
+    return;
+  }
+
+  const auto preferred_distance = object.to_road_shoulder_distance;
+  const auto preferred_narrowest_place = object.narrowest_place;
+  const auto opposite_direction = object.preferred_direction == Direction::LEFT ? Direction::RIGHT
+                                                                                : Direction::LEFT;
+  evaluate(opposite_direction);
+  if (object.avoid_margin.has_value()) {
+    RCLCPP_DEBUG(
+      rclcpp::get_logger(logger_namespace),
+      "preferred avoidance side has insufficient space; using the opposite side");
+    return;
+  }
+
+  // Keep the preferred side when neither side is feasible so that the result is deterministic and
+  // the debug marker continues to describe the original preference.
+  object.direction = object.preferred_direction;
+  sort_overhang_points();
+  object.to_road_shoulder_distance = preferred_distance;
+  object.narrowest_place = preferred_narrowest_place;
+  object.avoid_margin = std::nullopt;
+}
 }  // namespace filtering_utils
 
 bool isOnRight(const ObjectData & obj)
@@ -1975,10 +2028,23 @@ void fillAvoidanceNecessity(
     0.5 * vehicle_width + lateral_hard_margin * object_data.distance_factor;
 
   const auto check_necessity = [&](const auto hysteresis_factor) {
-    return (isOnRight(object_data) && std::abs(object_data.overhang_points.front().first) <
-                                        safety_margin * hysteresis_factor) ||
-           (!isOnRight(object_data) &&
-            object_data.overhang_points.front().first < safety_margin * hysteresis_factor);
+    const auto preferred_direction = object_data.preferred_direction == Direction::NONE
+                                       ? object_data.direction
+                                       : object_data.preferred_direction;
+    const auto object_on_right = preferred_direction == Direction::RIGHT;
+    const auto overhang_itr = object_on_right
+                                ? std::max_element(
+                                    object_data.overhang_points.begin(),
+                                    object_data.overhang_points.end(),
+                                    [](const auto & a, const auto & b) { return a.first < b.first; })
+                                : std::min_element(
+                                    object_data.overhang_points.begin(),
+                                    object_data.overhang_points.end(),
+                                    [](const auto & a, const auto & b) { return a.first < b.first; });
+    const auto overhang_distance = overhang_itr->first;
+    return (object_on_right &&
+            std::abs(overhang_distance) < safety_margin * hysteresis_factor) ||
+           (!object_on_right && overhang_distance < safety_margin * hysteresis_factor);
   };
 
   const auto id = object_data.object.object_id;
@@ -2233,8 +2299,8 @@ void updateRoadShoulderDistance(
   data.right_bound = tmp_path.right_bound;
 
   for (auto & o : data.target_objects) {
-    o.to_road_shoulder_distance = filtering_utils::getRoadShoulderDistance(o, data, planner_data);
-    o.avoid_margin = filtering_utils::getAvoidMargin(o, planner_data, parameters);
+    filtering_utils::updateRoadShoulderDistanceAndAvoidMargin(
+      o, data, planner_data, parameters);
   }
 }
 
@@ -2284,7 +2350,8 @@ void filterTargetObjects(
         data.other_objects.push_back(o);
         continue;
       }
-      o.avoid_margin = filtering_utils::getAvoidMargin(o, planner_data, parameters);
+      filtering_utils::updateRoadShoulderDistanceAndAvoidMargin(
+        o, data, planner_data, parameters);
     } else if (filtering_utils::isVehicleTypeObject(o)) {
       // TARGET: CAR, TRUCK, BUS, TRAILER, MOTORCYCLE
       o.behavior = filtering_utils::getObjectBehavior(o, parameters);
@@ -2310,6 +2377,15 @@ void filterTargetObjects(
         data.other_objects.push_back(o);
         continue;
       }
+
+      if (!o.avoid_margin.has_value()) {
+        filtering_utils::updateRoadShoulderDistanceAndAvoidMargin(
+          o, data, planner_data, parameters);
+        if (filtering_utils::isNoNeedAvoidanceBehavior(o, parameters)) {
+          data.other_objects.push_back(o);
+          continue;
+        }
+      }
     } else {
       // TARGET: PEDESTRIAN, BICYCLE
 
@@ -2326,6 +2402,15 @@ void filterTargetObjects(
       if (!filtering_utils::isSatisfiedWithNonVehicleCondition(o, data, planner_data, parameters)) {
         data.other_objects.push_back(o);
         continue;
+      }
+
+      if (!o.avoid_margin.has_value()) {
+        filtering_utils::updateRoadShoulderDistanceAndAvoidMargin(
+          o, data, planner_data, parameters);
+        if (filtering_utils::isNoNeedAvoidanceBehavior(o, parameters)) {
+          data.other_objects.push_back(o);
+          continue;
+        }
       }
     }
 

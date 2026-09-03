@@ -5,6 +5,28 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 env_file="${repo_root}/.env"
 
+usage() {
+  cat <<'EOF'
+Usage: ./autoware [ROUTE.csv]
+
+Start Autoware, optionally loading a CSV route after map and localization are
+ready. Seq 1 is the start, intermediate rows are checkpoints, and the last row
+is the goal.
+
+Example:
+  ./autoware routes/route_example.csv
+EOF
+}
+
+if (( $# > 1 )); then
+  usage >&2
+  exit 2
+fi
+if (( $# == 1 )) && [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
 if [[ ! -f "${env_file}" ]]; then
   echo "Missing ${env_file}. Run: cp .env.example .env" >&2
   exit 1
@@ -47,6 +69,20 @@ fi
 export HOST_UID="$(id -u)"
 export HOST_GID="$(id -g)"
 
+compose_run_args=(run --rm)
+if (( $# == 1 )); then
+  route_csv="$1"
+  if [[ ! -f "${route_csv}" || ! -r "${route_csv}" ]]; then
+    echo "Route CSV is not a readable file: ${route_csv}" >&2
+    exit 1
+  fi
+  route_csv="$(realpath -- "${route_csv}")"
+  compose_run_args+=(
+    --volume "${route_csv}:/tmp/autoware-route.csv:ro"
+    --env AUTOWARE_ROUTE_CSV=/tmp/autoware-route.csv
+  )
+fi
+
 xhost_enabled=0
 if [[ -n "${DISPLAY:-}" ]] && command -v xhost >/dev/null 2>&1; then
   xhost +local:docker >/dev/null
@@ -62,5 +98,5 @@ trap cleanup EXIT
 docker compose \
   --env-file "${env_file}" \
   -f "${repo_root}/docker/vtd/compose.yaml" \
-  run --rm autoware \
-  bash -lc 'source /opt/ros/jazzy/setup.bash; source /opt/autoware/setup.bash; source /opt/selfcar_overlay/setup.bash; (until ros2 param set /planning/scenario_planning/external_velocity_limit_selector max_vel 16.67 >/dev/null 2>&1; do sleep 1; done; ros2 param set /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner max_vel 16.67 >/dev/null; ros2 param set /planning/scenario_planning/velocity_smoother max_vel 16.67 >/dev/null; ros2 topic pub --once --qos-durability transient_local /planning/scenario_planning/clear_velocity_limit autoware_internal_planning_msgs/msg/VelocityLimitClearCommand "{command: true, sender: rviz2(autoware_state_panel)}" >/dev/null; exec ros2 topic pub -r 1 /planning/scenario_planning/max_velocity autoware_internal_planning_msgs/msg/VelocityLimit "{max_velocity: 16.67, use_constraints: false, sender: autoware_run}" >/dev/null) & exec ros2 launch autoware_launch planning_simulator.launch.xml map_path:=/home/aw/vtd_autoware_maps/${VTD_MAP_RELATIVE_PATH} vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit planning_module_preset:=vtd_low_memory scenario_simulation:=true localization_sim_mode:=none use_sim_time:=true enable_all_modules_auto_mode:=true launch_run_out_module:=false'
+  "${compose_run_args[@]}" autoware \
+  bash -lc 'source /opt/ros/jazzy/setup.bash; source /opt/autoware/setup.bash; source /opt/selfcar_overlay/setup.bash; if [[ -n "${AUTOWARE_ROUTE_CSV:-}" ]]; then python3 /opt/selfcar-tools/set_route_from_csv.py "${AUTOWARE_ROUTE_CSV}" & fi; (until ros2 param set /planning/scenario_planning/external_velocity_limit_selector max_vel 16.67 >/dev/null 2>&1; do sleep 1; done; ros2 param set /planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner max_vel 16.67 >/dev/null; ros2 param set /planning/scenario_planning/velocity_smoother max_vel 16.67 >/dev/null; ros2 topic pub --once --qos-durability transient_local /planning/scenario_planning/clear_velocity_limit autoware_internal_planning_msgs/msg/VelocityLimitClearCommand "{command: true, sender: rviz2(autoware_state_panel)}" >/dev/null; exec ros2 topic pub -r 1 /planning/scenario_planning/max_velocity autoware_internal_planning_msgs/msg/VelocityLimit "{max_velocity: 16.67, use_constraints: false, sender: autoware_run}" >/dev/null) & exec ros2 launch autoware_launch planning_simulator.launch.xml map_path:=/home/aw/vtd_autoware_maps/${VTD_MAP_RELATIVE_PATH} vehicle_model:=sample_vehicle sensor_model:=sample_sensor_kit planning_module_preset:=vtd_low_memory scenario_simulation:=true localization_sim_mode:=none use_sim_time:=true enable_all_modules_auto_mode:=true launch_dynamic_obstacle_stop_module:=false launch_run_out_module:=true'

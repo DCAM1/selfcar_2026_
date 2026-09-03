@@ -9,7 +9,14 @@ pass() { printf 'PASS %s\n' "$1"; }
 fail() { printf 'FAIL %s\n' "$1" >&2; failures=$((failures + 1)); }
 skip() { printf 'SKIPPED %s\n' "$1"; }
 
-active_files=(autoware vtd_bridge docker/vtd scripts/build-vtd-image.sh)
+active_files=(
+  autoware
+  set_route
+  vtd_bridge
+  docker/vtd
+  scripts/build-vtd-image.sh
+  scripts/set_route_from_csv.py
+)
 
 if rg -n 'autoware_vtd_overlay|/home/[[:alnum:]_.-]+/autoware(/|/src|/build|/install)' "${active_files[@]}" >/tmp/selfcar-repro-paths 2>/dev/null; then
   cat /tmp/selfcar-repro-paths >&2

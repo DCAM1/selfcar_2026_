@@ -347,6 +347,15 @@ private:
   void fillFundamentalData(AvoidancePlanningData & data, DebugData & debug);
 
   /**
+   * @brief absorb the current lateral shift into a newly supplied reference lane.
+   * @details When an upstream module changes lane IDs, the new reference path already represents
+   * the lane change. Keeping shift lines expressed in the old reference frame would apply the old
+   * offset a second time and make the next candidate discontinuous at the ego pose.
+   */
+  void rebaseToNewReferenceLane(
+    const PathWithLaneId & reference_path, const lanelet::ConstLanelets & current_lanelets);
+
+  /**
    * @brief fill additional data so that the module judges target objects.
    * @return object that has additional data.
    */

@@ -11,16 +11,16 @@ files:
     upstream_path: autoware_launch/config/planning/preset/default_preset.yaml
     upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
     changed: true
-    purpose: Disable parking and remaining-distance modules in the memory-constrained VTD runtime.
-    sha256: 0ca886c3408d73ba7d43e16152afec8e7f43fcd9f66b943c7be6abc262186fe9
+    purpose: Use predicted-path run-out handling for UNKNOWN VTD actors and disable the vehicle-class-specific dynamic stop module.
+    sha256: bf8f468d7c191ab2e38b4a3d1fec7d2457a913833266296436d117e0c9d4d223
   - repository_path: config/vtd/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
     upstream_path: autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
     upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
     changed: true
-    purpose: Preserve motion output for VTD objects that are intentionally classified as UNKNOWN.
-    sha256: 578cd8fcb52d1fdb3161691b0c57505d2b812e2c5ecc3e4c514a3ecffd043064
+    purpose: Preserve motion output exclusively for VTD objects classified as UNKNOWN.
+    sha256: 192af3fff0d0facb730a0faab86ca30ff73deda566d1047104eb48b74ee8fdc0
   - repository_path: config/vtd/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/data_association_matrix.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
@@ -35,8 +35,40 @@ files:
     upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_stop.param.yaml
     upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
     changed: true
-    purpose: Enable collision-stop planning from the synthetic VTD obstacle pointcloud.
-    sha256: 6d9c98db6c5287fad446b158f55339d700430bead2c3562836f558617c213cd2
+    purpose: Plan normal stops from UNKNOWN tracked objects while reserving the synthetic pointcloud for AEB fallback.
+    sha256: 829de514c425612693f01ac81e4fb375ecefd0663a5318dce03c2d4d41c74ee7
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_cruise.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_cruise.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_cruise.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only cruise and cut-in classification used by VTD.
+    sha256: e84dca915788ea9c0cd3a714ee14268c9d69bbd720ba29975fdd6a53bf75fd3b
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_slow_down.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_slow_down.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/obstacle_slow_down.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only adjacent-obstacle slowdown classification used by VTD.
+    sha256: b29105cab7d07fa38f59548e85b822fb4351ef00482735f2b5a8385d982f61a8
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/run_out.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/run_out.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/run_out.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Detect time-overlapping predicted paths for every moving UNKNOWN VTD actor, including jaywalkers.
+    sha256: 7920b400aae82f57f6b5415b80581035a0babed7b8686204690c39b494d09a36
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/road_user_stop.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/road_user_stop.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/motion_planning/motion_velocity_planner/road_user_stop.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only road-user stop classification used by VTD.
+    sha256: 096b1ad0f9c28df19df5329d301dc6ca24a62096b1cd64966f0812a1b2a15b8b
   - repository_path: config/vtd/control/autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/control/autoware_autonomous_emergency_braking/autonomous_emergency_braking.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
@@ -77,6 +109,14 @@ files:
     changed: true
     purpose: Preserve the 60 km/h local planning limit.
     sha256: a089a7c7099840c9043d048cd48a9967b4ffd133dfbad66f96893b51ab74d51d
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/autoware_behavior_path_static_obstacle_avoidance_module/static_obstacle_avoidance.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/autoware_behavior_path_static_obstacle_avoidance_module/static_obstacle_avoidance.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/autoware_behavior_path_static_obstacle_avoidance_module/static_obstacle_avoidance.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Load aggressive VTD static-obstacle shift constraints and use UNKNOWN as the only target/safety classification.
+    sha256: 4379e124246a103101933391f295d39e597cf51736d331b081a40be21b515489
   - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/drivable_area_expansion.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
@@ -85,14 +125,54 @@ files:
     changed: true
     purpose: Preserve the curve-local swept-width margin.
     sha256: 3bace7d182439e52104236008e702a3afab527a9d01acbe677056c51f2b938a3
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/avoidance_by_lane_change/avoidance_by_lane_change.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/avoidance_by_lane_change/avoidance_by_lane_change.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/avoidance_by_lane_change/avoidance_by_lane_change.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only avoidance-by-lane-change target classification used by VTD.
+    sha256: f36f64f7c2fedfde72e62f48f974eac036e3f1d20fc803af87bb6d04bdc39199
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/goal_planner/goal_planner.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/goal_planner/goal_planner.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/goal_planner/goal_planner.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only goal-planner path-safety classification used by VTD.
+    sha256: 2f545c94dea98cc10f3c64ec3dc35aebe1da07db51c634fcadb617faf73a73a0
   - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
     upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/lane_change/lane_change.param.yaml
     upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
     changed: true
-    purpose: Preserve local split-lane and short multi-lane behavior parameters.
-    sha256: be23f838b2afe00b445e258bd6af2b6a24aa2278ca223eee8e5348dc22d0ad3d
+    purpose: Preserve local lane-change behavior while making UNKNOWN the only collision-check classification.
+    sha256: eb3e4ba5c3894a5fe8d34cd55f8c12f749a10d1d6afdcc8f6c0c36e6240d78a0
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/start_planner/start_planner.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/start_planner/start_planner.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_path_planner/start_planner/start_planner.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only start-planner path-safety classification used by VTD.
+    sha256: 20fd31bd49e853f6e54433f8cce522fb7e4ca8b66d2d49e507fec84b95b27de7
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/crosswalk.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/crosswalk.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/crosswalk.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only crosswalk target classification used by VTD.
+    sha256: bc00ec12e0a6146ed825caccdf14e6ab7f4ddad6d204dca59f9cdae6229350d3
+  - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/intersection.param.yaml
+    container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/intersection.param.yaml
+    upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
+    upstream_path: autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/intersection.param.yaml
+    upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
+    changed: true
+    purpose: Make UNKNOWN the only intersection target classification used by VTD.
+    sha256: 4c908f69290ce438bb39611788b6db1fcf7a14cec973fc07b9a9e63abba52ef4
   - repository_path: config/vtd/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/planning/scenario_planning/lane_driving/behavior_planning/behavior_velocity_planner/traffic_light.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git
@@ -139,8 +219,8 @@ files:
     upstream_path: vehicle/sample_vehicle_launch/sample_vehicle_description/config/vehicle_info.param.yaml
     upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
     changed: true
-    purpose: Preserve VTD IONIQ 6 wheelbase and steering limits.
-    sha256: 450c78963674b037cf80b0d571d28021ad6e3dd0ce02c80537f2bab6ff4bf22f
+    purpose: Match the Autoware vehicle model steering limit to the VTD bridge limit.
+    sha256: 774ab0f1dd093b1e4ba9b72e8bc582d756acf18e6a385f4373c7cfc50aaee18a
   - repository_path: vtd_overlay/src/autoware_universe/planning/behavior_velocity_planner/autoware_behavior_velocity_traffic_light_module/config/traffic_light.param.yaml
     container_target: /opt/selfcar_overlay/share/autoware_behavior_velocity_traffic_light_module/config/traffic_light.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_universe.git

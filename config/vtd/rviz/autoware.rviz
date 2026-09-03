@@ -1319,6 +1319,54 @@ Visualization Manager:
               Background Alpha: 0.5
               Background Color: 23; 28; 31
               Text Color: 194; 194; 194
+            - Class: rviz_common/Group
+              Displays:
+                - Class: rviz_default_plugins/MarkerArray
+                  Enabled: true
+                  Name: CSV Raw Checkpoints (red X)
+                  Namespaces: {}
+                  Topic:
+                    Depth: 1
+                    Durability Policy: Transient Local
+                    History Policy: Keep Last
+                    Reliability Policy: Reliable
+                    Value: /debug/csv/raw_checkpoints
+                  Value: true
+                - Class: rviz_default_plugins/MarkerArray
+                  Enabled: true
+                  Name: CSV Candidate Lanelets (yellow)
+                  Namespaces: {}
+                  Topic:
+                    Depth: 1
+                    Durability Policy: Transient Local
+                    History Policy: Keep Last
+                    Reliability Policy: Reliable
+                    Value: /debug/csv/candidate_lanelets
+                  Value: true
+                - Class: rviz_default_plugins/MarkerArray
+                  Enabled: true
+                  Name: CSV Selected Lanelets (green)
+                  Namespaces: {}
+                  Topic:
+                    Depth: 1
+                    Durability Policy: Transient Local
+                    History Policy: Keep Last
+                    Reliability Policy: Reliable
+                    Value: /debug/csv/selected_lanelets
+                  Value: true
+                - Class: rviz_default_plugins/MarkerArray
+                  Enabled: true
+                  Name: CSV Corrected Checkpoints (blue)
+                  Namespaces: {}
+                  Topic:
+                    Depth: 1
+                    Durability Policy: Transient Local
+                    History Policy: Keep Last
+                    Reliability Policy: Reliable
+                    Value: /debug/csv/corrected_checkpoints
+                  Value: true
+              Enabled: true
+              Name: CSV Route Preview
           Enabled: true
           Name: MissionPlanning
         - Class: rviz_common/Group
@@ -4209,6 +4257,14 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /planning/mission_planning/goal
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /clicked_point
     - Class: tier4_adapi_rviz_plugins::RouteTool
       Topic:
         Depth: 5

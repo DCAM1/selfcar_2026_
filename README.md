@@ -72,7 +72,7 @@ cp .env.example .env
 # Edit .env with the external asset paths.
 ./scripts/verify-reproducibility.sh
 ./scripts/build-vtd-image.sh
-./autoware
+./autoware routes/route_example.csv
 ```
 
 See [docs/build-and-run.md](docs/build-and-run.md),
@@ -80,6 +80,15 @@ See [docs/build-and-run.md](docs/build-and-run.md),
 [`vtd_overlay/origin.yaml`](vtd_overlay/origin.yaml) for the exact upstream
 commits, external asset manifest, package provenance, and optional bridge
 runtime.
+
+The optional CSV argument map-matches a complete route after Autoware is ready:
+nearby lanelets are selected using direction and forward topology, every point
+is projected to the chosen centerline, sequence 1 is checked against the VTD
+ego start, intermediate sequences become checkpoints, and the final sequence
+becomes an in-lane goal. Use `./set_route FILE.csv` for RViz preview and to set
+or safely change the route of an already running instance. Manual RViz lanelet
+overrides can be saved as `corrected_route.csv`; see
+[docs/build-and-run.md](docs/build-and-run.md#csv-routes).
 
 Edit a package only under `vtd_overlay/src/`, then rerun
 `./scripts/build-vtd-image.sh`; use `./scripts/verify-reproducibility.sh` to

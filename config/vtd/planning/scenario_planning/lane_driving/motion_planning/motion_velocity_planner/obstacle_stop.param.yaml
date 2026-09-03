@@ -42,12 +42,16 @@
 
       obstacle_filtering:
         check_inside:
-          default: true
-          # VTD supplies a synthetic obstacle cloud even when the physical LiDAR is not running.
-          pointcloud: true
+          # VTD normalizes every actor to UNKNOWN. Use the tracked object for normal stop planning
+          # so velocity and prediction are retained; non-UNKNOWN labels are intentionally ignored.
+          default: false
+          unknown: true
+          # The same VTD actor is also rendered as a synthetic cloud. Keep that cloud for AEB, but
+          # do not create a duplicate, prediction-free hard stop in the normal planner.
+          pointcloud: false
         check_outside:
-          default: true
-          unknown: false
+          default: false
+          unknown: true
         trim_trajectory:
           enable_trimming:
             default: false
@@ -81,9 +85,8 @@
           min_longitudinal_velocity: -8.0
           max_moving_direction_angle: 2.44
           deceleration:
-            default: 0.0
-            pedestrian: 1.0
-            bicycle: 2.0
+            # Classification-independent assumption for every VTD UNKNOWN actor.
+            default: 1.0
         crossing_obstacle:
           collision_time_margin: 1.0
           traj_angle_threshold: 0.523599

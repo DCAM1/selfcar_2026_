@@ -15,15 +15,13 @@ namespace vtd_ros2_bridge
 
 RdbTcpClient::RdbTcpClient(
   std::string label, std::string host, const int port, MessageCallback message_callback,
-  ConnectionCallback connection_callback, const std::chrono::milliseconds reconnect_delay,
-  const bool decode_rdb_stream)
+  ConnectionCallback connection_callback, const std::chrono::milliseconds reconnect_delay)
 : label_(std::move(label)),
   host_(std::move(host)),
   port_(port),
   message_callback_(std::move(message_callback)),
   connection_callback_(std::move(connection_callback)),
-  reconnect_delay_(reconnect_delay),
-  decode_rdb_stream_(decode_rdb_stream)
+  reconnect_delay_(reconnect_delay)
 {
 }
 
@@ -149,21 +147,14 @@ void RdbTcpClient::run()
       if (received <= 0) {
         break;
       }
-      if (decode_rdb_stream_) {
-        decoder_.append(
-          receive_buffer.data(), static_cast<std::size_t>(received),
-          [this](const std::uint8_t * message, const std::size_t size) {
-            ++received_messages_;
-            if (message_callback_) {
-              message_callback_(message, size);
-            }
-          });
-      } else {
-        // The HL_VTD participant socket sends a fixed-size, headerless state
-        // stream. Drain it so the server never blocks; state still comes from
-        // the full RDB channel handled by the other client.
-        ++received_messages_;
-      }
+      decoder_.append(
+        receive_buffer.data(), static_cast<std::size_t>(received),
+        [this](const std::uint8_t * message, const std::size_t size) {
+          ++received_messages_;
+          if (message_callback_) {
+            message_callback_(message, size);
+          }
+        });
     }
 
     close_socket();

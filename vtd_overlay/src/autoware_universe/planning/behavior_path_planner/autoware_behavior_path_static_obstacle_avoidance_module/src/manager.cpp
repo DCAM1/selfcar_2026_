@@ -244,7 +244,7 @@ void StaticObstacleAvoidanceModuleManager::updateModuleParams(
   }
 
   {
-    const std::string ns = "avoidance.constrains.lateral.";
+    const std::string ns = "avoidance.constraints.lateral.";
 
     std::vector<double> velocity_map;
     update_param<std::vector<double>>(parameters, ns + "velocity", velocity_map);

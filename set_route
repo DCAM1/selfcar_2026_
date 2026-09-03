@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+env_file="${repo_root}/.env"
+
+usage() {
+  cat <<'EOF'
+Usage: ./set_route ROUTE.csv [route setter options]
+
+Map-match a CSV route to the lanelet map, preview it in RViz, and set it on an
+already running Autoware instance. The CSV must contain seq,x,y columns.
+
+Example:
+  ./set_route routes/route_example.csv
+  ./set_route /home/a/route_example.csv --start-tolerance 8
+  ./set_route official.csv --preview-only
+  ./set_route official.csv --override-seq 5 --output-csv corrected_route.csv
+
+Options passed to the route setter:
+  --frame-id FRAME             Coordinate frame (default: map)
+  --map FILE                   Override lanelet2_map.osm
+  --candidate-radius METRES    Lanelet centerline search radius (default: 8)
+  --timeout SECONDS            Overall timeout (default: 300)
+  --start-tolerance METRES     Allowed distance from seq 1 (default: 5)
+  --skip-start-check           Do not enforce proximity to seq 1
+  --allow-goal-modification    Allow Autoware to adjust the goal pose
+  --preview-only               Publish markers without setting the route
+  --override-seq SEQ           Pick this seq's lanelet using RViz Publish Point
+  --output-csv FILE            Save corrected coordinates and lanelet IDs
+  --dry-run                    Map-match and validate without connecting to ROS
+EOF
+}
+
+if (( $# == 0 )); then
+  usage >&2
+  exit 2
+fi
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+route_csv="$1"
+shift
+if [[ ! -f "${route_csv}" || ! -r "${route_csv}" ]]; then
+  echo "Route CSV is not a readable file: ${route_csv}" >&2
+  exit 1
+fi
+route_csv="$(realpath -- "${route_csv}")"
+
+if [[ ! -f "${env_file}" ]]; then
+  echo "Missing ${env_file}. Run: cp .env.example .env" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "${env_file}"
+set +a
+
+vtd_image="${VTD_IMAGE:-selfcar-2026-vtd:local}"
+if ! docker image inspect "${vtd_image}" >/dev/null 2>&1; then
+  echo "Image ${vtd_image} is not available. Run ./scripts/build-vtd-image.sh first." >&2
+  exit 1
+fi
+
+require_dir() {
+  local variable_name="$1"
+  local directory="${!variable_name:-}"
+  if [[ -z "${directory}" || ! -d "${directory}" ]]; then
+    echo "${variable_name} must point to an existing directory: ${directory:-<unset>}" >&2
+    exit 1
+  fi
+}
+
+require_dir VTD_MAP_DIR
+map_relative_path="${VTD_MAP_RELATIVE_PATH:-HL_FMA_VTD_LivingLab_topology_fixed}"
+if [[ "${map_relative_path}" == /* || "${map_relative_path}" == *..* ]]; then
+  echo "VTD_MAP_RELATIVE_PATH must be a safe relative path: ${map_relative_path}" >&2
+  exit 1
+fi
+lanelet_map="${VTD_MAP_DIR}/${map_relative_path}/lanelet2_map.osm"
+if [[ ! -r "${lanelet_map}" ]]; then
+  echo "Lanelet map is not readable: ${lanelet_map}" >&2
+  exit 1
+fi
+
+route_options=("$@")
+container_options=()
+extra_mounts=()
+has_override=0
+has_output=0
+index=0
+while (( index < ${#route_options[@]} )); do
+  option="${route_options[index]}"
+  case "${option}" in
+    --override-seq)
+      has_override=1
+      container_options+=("${option}")
+      ((index += 1))
+      if (( index >= ${#route_options[@]} )); then
+        echo "--override-seq requires a sequence number" >&2
+        exit 2
+      fi
+      container_options+=("${route_options[index]}")
+      ;;
+    --output-csv)
+      has_output=1
+      ((index += 1))
+      if (( index >= ${#route_options[@]} )); then
+        echo "--output-csv requires a file path" >&2
+        exit 2
+      fi
+      output_path="$(realpath -m -- "${route_options[index]}")"
+      output_dir="$(dirname -- "${output_path}")"
+      if [[ ! -d "${output_dir}" ]]; then
+        echo "Output directory does not exist: ${output_dir}" >&2
+        exit 1
+      fi
+      extra_mounts+=(--volume "${output_dir}:/tmp/csv-route-output")
+      container_options+=(
+        --output-csv "/tmp/csv-route-output/$(basename -- "${output_path}")"
+      )
+      ;;
+    --map)
+      ((index += 1))
+      if (( index >= ${#route_options[@]} )); then
+        echo "--map requires a file path" >&2
+        exit 2
+      fi
+      explicit_map="$(realpath -- "${route_options[index]}")"
+      if [[ ! -r "${explicit_map}" ]]; then
+        echo "Lanelet map is not readable: ${explicit_map}" >&2
+        exit 1
+      fi
+      extra_mounts+=(--volume "${explicit_map}:/tmp/csv-lanelet-map.osm:ro")
+      container_options+=(--map /tmp/csv-lanelet-map.osm)
+      ;;
+    *)
+      container_options+=("${option}")
+      ;;
+  esac
+  ((index += 1))
+done
+
+if (( has_override == 1 && has_output == 0 )); then
+  output_dir="$(pwd -P)"
+  extra_mounts+=(--volume "${output_dir}:/tmp/csv-route-output")
+  container_options+=(--output-csv /tmp/csv-route-output/corrected_route.csv)
+fi
+
+exec docker run --rm \
+  --network host \
+  --ipc host \
+  --entrypoint /bin/bash \
+  --volume "${route_csv}:/tmp/autoware-route.csv:ro" \
+  --volume "${VTD_MAP_DIR}:/home/aw/vtd_autoware_maps:ro" \
+  --volume "${repo_root}/scripts/set_route_from_csv.py:/opt/selfcar-tools/set_route_from_csv.py:ro" \
+  --env "VTD_MAP_RELATIVE_PATH=${map_relative_path}" \
+  "${extra_mounts[@]}" \
+  "${vtd_image}" \
+  -lc \
+  'source /opt/ros/jazzy/setup.bash; source /opt/autoware/setup.bash; source /opt/selfcar_overlay/setup.bash; exec python3 /opt/selfcar-tools/set_route_from_csv.py "$@"' \
+  csv-route-setter /tmp/autoware-route.csv "${container_options[@]}"

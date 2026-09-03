@@ -1002,11 +1002,11 @@ bool is_same_lane_with_prev_iteration(
 
   if (
     (prev_current_lanes.front().id() != current_lanes.front().id()) ||
-    (prev_current_lanes.back().id() != prev_current_lanes.back().id())) {
+    (prev_current_lanes.back().id() != current_lanes.back().id())) {
     return false;
   }
   return (prev_target_lanes.front().id() == target_lanes.front().id()) &&
-         (prev_target_lanes.back().id() == prev_target_lanes.back().id());
+         (prev_target_lanes.back().id() == target_lanes.back().id());
 }
 
 MinMaxValue calc_polygon_dist_range_from_terminal_end(

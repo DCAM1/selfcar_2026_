@@ -9,14 +9,15 @@ VTD 2025.2의 RDB 데이터를 ROS 2/Autoware 토픽으로 변환하고, Autowar
 | VTD → ROS | `RDB_OBJECT_STATE` extended | `/localization/kinematic_state`, `/localization/acceleration`, `/vehicle/status/velocity_status`, TF `map→base_link`, `/clock` |
 | VTD → Autoware | 첫 ego pose 수신 이후 | `/localization/initialization_state = INITIALIZED` |
 | VTD bridge → Autoware | VTD ground-truth 주행 모드 | `/perception/occupancy_grid_map/map` (ego 주변 free-space grid) |
-| VTD bridge → Autoware | VTD ground-truth 주행 모드 | `/perception/obstacle_segmentation/pointcloud` (empty obstacle cloud) |
+| VTD bridge → Autoware | VTD ground-truth 주행 모드 | `/perception/obstacle_segmentation/pointcloud` (VTD 객체 bbox 합성 점군) |
 | VTD → ROS | `RDB_VEHICLE_SYSTEMS`, `RDB_DRIVETRAIN` | steering/gear/light/control-mode vehicle status |
-| VTD → ROS | `RDB_RAY` | `sensor_msgs/PointCloud2` |
+| VTD TCP sensor → ROS | `RDB_RAY` | `sensor_msgs/PointCloud2` |
+| HLVTD UDP `9912` → ROS | 독립 `vtd_lidar_node`가 `IVHL` 분할 패킷의 world-coordinate float32 XYZ 수신 | `/sensing/lidar/concatenated/pointcloud` (`sensor_msgs/PointCloud2`) |
 | VTD → ROS | `RDB_IMAGE`, `RDB_CAMERA` | `sensor_msgs/Image`, `CameraInfo` |
 | VTD → Autoware | `RDB_TRAFFIC_LIGHT` extended | `/simulator/input/traffic_signals` → `/perception/traffic_light_recognition/traffic_signals` |
 | Autoware planning → RViz | 현재 도로의 맵 최고속도 | `/planning/scenario_planning/applied_velocity_limit` (표시 전용) |
 | VTD SHM → ROS | OptiXLidar `CUSTOM_OPTIX_START` + `RGBA32F` | `sensor_msgs/PointCloud2` |
-| Autoware → VTD | control/gear/turn-indicator/hazard command topics | `RDB_DRIVER_CTRL` and, for `00_HL_VTD`, TCP 9910 participant control (`accelTgt`, `steeringTgt`, turn signal) |
+| Autoware → HLVTD | control/turn-indicator command topics | TCP `9910` headerless CONTROL (`steering`, `targetAccel`, `turnSignal`) |
 
 인터페이스 API의 상태 필드는 다음 ROS 토픽으로도 그대로 제공됩니다.
 
@@ -61,11 +62,20 @@ ego와 가장 가까운 lane ID를 찾고, 그 lane의 reference-path 최고속�
   --audit-report /tmp/traffic_light_cleanup_report.json
 ```
 
-TCP 9910은 `00_HL_VTD` 동역학 플러그인의 헤더 없는 참가자 인터페이스입니다.
-브리지는 이 포트의 1109-byte 상태 스트림을 계속 소비하고, 설치된 플러그인 규격인
-9-byte little-endian 제어(`float steering`, `float acceleration`, `uint8 turn signal`)를
-매 VTD 프레임 송신합니다. 상태·객체·신호등은 전체 RDB(48190)에서 계속 받습니다.
-UDP 9912와 RTSP 8554는 각각 외부 LiDAR와 카메라 스트림용입니다.
+TCP 9910은 `vtd_bridge_node`가 HLVTD의 양방향 DATA/CONTROL 채널로 사용하며,
+RDB 48190은 상태 수신 전용입니다. UDP 9912는 LiDAR 전용입니다. LiDAR
+UDP 9912는 제어용 `vtd_bridge_node`와 분리된 `vtd_lidar_node`가
+`0.0.0.0:9912`에 직접 bind합니다. HLVTD의
+`Plugins/HLVTD/Runtime/lidar_udp_sender.py`는 SHM의 OptiXLidar `RGB32F` 데이터를
+little-endian `IVHL` 헤더(`<IHIQdHHIIHBB`, 42 bytes)와 float32 XYZ payload로 분할
+전송합니다. 브리지는 frame ID, packet index/count, 전체 point count와 point offset을
+검증하고 모든 조각을 재조립한 다음 `(0,0,0)` miss point를 제외해 PointCloud2로
+발행합니다. 현재 `scenario_simulation` 구성에서는 raw LiDAR 전처리 체인이
+실행되지 않으므로, Autoware와 RViz가 실제 구독하는
+`/sensing/lidar/concatenated/pointcloud`로 재조립된 프레임을 직접 발행합니다.
+HLVTD 외에 표준 RDB UDP 데이터그램이 들어오는 경우에는 기존 `RDB_RAY`
+변환도 계속 지원합니다. 구조나 길이가 잘못된 패킷은 PointCloud2로 발행하지 않고
+`lidar_udp_rejected_packets`와 `parse_errors`에 기록합니다.
 
 `accelTgt`와 Autoware acceleration은 모두 m/s²이고, `steeringTgt`와 Autoware `steering_tire_angle`은 모두 앞바퀴 등가 조향각(rad)입니다. 따라서 steering wheel ratio나 pedal percentage로 바꾸지 않습니다.
 
@@ -96,6 +106,15 @@ ros2 launch vtd_ros2_bridge vtd_bridge.launch.py
 ./src/vtd_ros2_bridge/scripts/run_bridge_docker.sh rdb_host:=192.168.0.20
 ```
 
+제어 설정은 `config/vtd_bridge.param.yaml`, LiDAR 설정은
+`config/vtd_lidar.param.yaml`에서 각각 읽습니다. HLVTD LiDAR UDP 수신 주소나
+포트를 바꾸려면 다음 launch 인자를 사용합니다.
+
+```bash
+ros2 launch vtd_ros2_bridge vtd_bridge.launch.py \
+  lidar_udp_bind:=0.0.0.0 lidar_udp_port:=9912
+```
+
 ## VTD 설정
 
 1. 현재 프로젝트의 ModuleManager 설정에 아래 raw RDB TCP 포트가 있어야 합니다. VTD 기본 포트는 `48190`입니다.
@@ -109,7 +128,8 @@ ros2 launch vtd_ros2_bridge vtd_bridge.launch.py
 2. ego state는 extended `RDB_OBJECT_STATE`가 포함되어야 합니다. extended가 아니면 위치는 나오지만 속도와 가속도는 0으로 게시됩니다.
 3. 카메라 TCP 스트림은 VTD 기본 image port `48192`를 사용합니다. 해당 IG 설정이 TCP image stream을 만들지 않는 경우에는 image port를 `0`으로 끄고 SHM을 사용합니다.
 4. PerfectSensor 같은 별도 RDB sensor module은 프로젝트에서 정한 포트로 연결합니다. 현재 `SampleProject.vpj`의 `Sensor_MM`은 TCP `48185`이고, 일반 예제 ModuleManager 설정은 `48195`를 쓰기도 합니다. 표준 `RDB_RAY`가 포함될 때 PointCloud2로 변환됩니다.
-5. OptiXLidar/RoboSense 계열이 System V SHM을 쓰면 `config/vtd_bridge.param.yaml`의 `shm.key`를 설정합니다. 이 설치본에서 확인된 일반 IG key는 `33130 (0x816a)`, RoboSense 샘플 기본값은 `33162`입니다. 실제 값은 VTD IG 설정과 `ipcs -m`으로 확인해야 합니다.
+5. HLVTD가 LiDAR를 UDP로 보낼 때 목적지 IP를 브리지 호스트로, 목적지 포트를 `9912`로 설정합니다. 컨테이너는 `network_mode: host`여야 합니다. UDP는 연결 과정이 없으므로 `lidar_udp_bound=1`은 로컬 소켓 준비, `lidar_udp_receiving=1`은 최근 2초 안에 실제 패킷 수신을 뜻합니다. `lidar_udp_hlvtd_packets`는 유효한 `IVHL` 조각 수, `lidar_udp_completed_frames`와 `lidar_udp_pointcloud_frames`는 조각이 모두 모여 실제 발행된 프레임 수입니다.
+6. OptiXLidar/RoboSense 계열이 System V SHM을 쓰면 `config/vtd_bridge.param.yaml`의 `shm.key`를 설정합니다. 이 설치본에서 확인된 일반 IG key는 `33130 (0x816a)`, RoboSense 샘플 기본값은 `33162`입니다. 실제 값은 VTD IG 설정과 `ipcs -m`으로 확인해야 합니다.
 
 사용하지 않는 채널은 port를 `0`으로 설정하면 재접속 시도를 하지 않습니다.
 
@@ -155,7 +175,7 @@ p_autoware = R(map_offset.yaw) · p_vtd + [map_offset.x, map_offset.y, map_offse
 - 브릿지와 Autoware 컨테이너는 모두 host network/IPC와 `/home/a/autoware/docker/files/cyclonedds.xml`을 사용합니다. 이 설정을 빼면 서로의 토픽이 보이지 않을 수 있습니다.
 - `TurnIndicatorsCommand`의 좌/우와 `HazardLightsCommand`의 비상등은 RDB `flags`로 변환되며, 비상등이 좌/우 명령보다 우선합니다.
 - `/vtd/objects`와 `/vtd/traffic_lights`는 RDB 상태 채널에 해당 패키지가 포함될 때 갱신됩니다. 현재 시나리오에 해당 객체가 없으면 배열은 빈 상태가 정상입니다.
-- LiDAR SHM의 OptiX 기본 출력은 world 좌표의 XYZ와 packed intensity이므로 PointCloud2 frame은 `map`입니다. `RDB_RAY`는 패키지의 coordinate type에 따라 `map`, `base_link`, `lidar_link`를 선택합니다.
+- 현재 HLVTD 설정의 OptiXLidar 출력은 `WORLD`, `1086x32`, `RT_FORMAT_FLOAT3`이므로 `IVHL` PointCloud2 frame은 `map`입니다. `RDB_RAY`는 패키지의 coordinate type에 따라 `map`, `base_link`, `lidar_link`를 선택합니다.
 - RoboSense 전용 플러그인이 거리/각도를 vendor packet 형식으로만 구성한 경우에는 이 generic XYZ 변환 대신 해당 모델의 UDP/packet decoder를 추가해야 합니다.
 
 ## 빠른 확인
@@ -167,7 +187,7 @@ ros2 topic echo /perception/traffic_light_recognition/traffic_signals --once
 ros2 topic echo /vehicle/status/velocity_status --once
 ros2 topic echo /vehicle/status/turn_indicators_status --once
 ros2 topic echo /vehicle/status/hazard_lights_status --once
-ros2 topic hz /sensing/lidar/top/pointcloud_raw
+ros2 topic hz /sensing/lidar/concatenated/pointcloud
 ros2 topic hz /sensing/camera/camera0/image_raw
 ros2 topic echo /diagnostics --once
 ```

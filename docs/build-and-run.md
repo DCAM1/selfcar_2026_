@@ -26,12 +26,80 @@ cp .env.example .env
 ./scripts/verify-reproducibility.sh
 ./scripts/build-vtd-image.sh
 ./vtd_bridge
-./autoware
+./autoware routes/route_example.csv
 ```
 
 `./autoware` checks that the external map/model directories and the selected
 VTD map exist, enables temporary X11 access, runs the planning simulator with
-the existing launch arguments, and removes the X11 access rule on exit.
+the existing launch arguments, and removes the X11 access rule on exit. When a
+CSV path is supplied, it loads that route as soon as the map and VTD
+localization are ready.
+
+## CSV routes
+
+Route files require `seq,x,y` columns. Optional `z`, `yaw`, and `lanelet_id`
+columns are accepted; `yaw` is a map-matching hint in radians and
+`lanelet_id` is a persistent manual override. Rows are sorted by `seq`, which
+must be unique and consecutive from 1. Sequence 1 is the expected vehicle
+start, the rows in between are checkpoints, and the last sequence is the goal.
+
+The setter never sends the raw CSV coordinates directly. For every row it
+finds nearby road lanelets, compares their directed centerlines with the CSV
+heading, and uses the routing graph to select one forward-connected sequence
+across all rows. Each point is projected onto the selected centerline and its
+yaw is replaced with the lanelet direction. Goal validation also checks that
+the centered vehicle has lateral clearance inside the selected goal lanelet.
+
+Start Autoware and load the example route automatically:
+
+```bash
+./autoware routes/route_example.csv
+```
+
+The VTD ego pose supplies Autoware's actual route start. To prevent silently
+planning from the wrong location, the setter waits for localization and checks
+that the vehicle is within 5 m of corrected sequence 1. It sends corrected
+sequences 2 through N-1 as waypoints and corrected sequence N as the goal. An
+`UNSET` route uses `/api/routing/set_route_points`; a `SET` route is replaced
+without clearing it through `/api/routing/change_route_points`.
+
+To replace a route on an Autoware instance that is already running, use a
+second terminal:
+
+```bash
+./set_route /home/a/route_example.csv
+```
+
+The default RViz configuration displays four transient-local previews:
+
+- `/debug/csv/raw_checkpoints`: red X markers for official CSV coordinates.
+- `/debug/csv/candidate_lanelets`: yellow lanelet outlines.
+- `/debug/csv/selected_lanelets`: the selected connected route in green.
+- `/debug/csv/corrected_checkpoints`: blue waypoint dots/arrows and a blue
+  star for the final goal.
+
+Preview without changing Autoware:
+
+```bash
+./set_route official.csv --preview-only
+```
+
+To override an ambiguous row, request one or more sequence numbers and click
+the desired road with RViz's **Publish Point** tool. The result is saved with
+corrected coordinates, lanelet yaw, and fixed `lanelet_id` values:
+
+```bash
+./set_route official.csv \
+  --override-seq 5 \
+  --output-csv corrected_route.csv
+```
+
+If `--output-csv` is omitted during an override, the wrapper writes
+`corrected_route.csv` in the current directory. Existing output files are
+protected unless `--force-output` is supplied. Run `./set_route --help` for
+search radius, direction threshold, preview, start-tolerance, and validation
+options. CSV files are runtime inputs and do not require an image rebuild;
+rebuild the image to update the copy used by `./autoware ROUTE.csv`.
 
 ## Overlay build
 

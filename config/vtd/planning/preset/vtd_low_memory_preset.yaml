@@ -116,7 +116,9 @@ launch:
       default: "true"
   - arg:
       name: launch_dynamic_obstacle_stop_module
-      default: "true"
+      # This module is vehicle-class and opposing-traffic specific. VTD normalizes every actor to
+      # UNKNOWN, so predicted-path/time-overlap conflicts are handled by run_out instead.
+      default: "false"
   - arg:
       name: launch_out_of_lane_module
       default: "true"
