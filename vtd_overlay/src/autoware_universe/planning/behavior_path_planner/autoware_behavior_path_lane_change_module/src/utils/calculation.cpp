@@ -21,6 +21,10 @@
 
 #include <boost/geometry/algorithms/buffer.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <unordered_set>
+
 namespace autoware::behavior_path_planner::utils::lane_change::calculation
 {
 
@@ -291,6 +295,97 @@ std::vector<double> calc_shift_intervals(
 
   const auto & route_handler_ptr = common_data_ptr->route_handler_ptr;
   const auto direction = common_data_ptr->direction;
+
+  if (common_data_ptr->lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE) {
+    if (direction != Direction::LEFT && direction != Direction::RIGHT) {
+      return {};
+    }
+
+    // Avoidance-by-lane-change deliberately may leave the preferred lane. Follow the same
+    // lane-changeable routing-graph chain used by target selection and accumulate every lateral
+    // interval up to the selected target. Return one aggregate interval because the requested
+    // maneuver is a single continuous multi-lane shift, not a sequence of separate lane changes.
+    const auto & target_lanes = common_data_ptr->lanes_ptr->target;
+    if (target_lanes.empty()) {
+      return {};
+    }
+    const auto target_lane_id = target_lanes.front().id();
+    const auto & routing_graph_ptr = route_handler_ptr->getRoutingGraphPtr();
+    for (const auto & source_lane : lanes) {
+      auto lateral_lane = source_lane;
+      std::unordered_set<lanelet::Id> visited{source_lane.id()};
+      double total_magnitude = 0.0;
+      size_t lane_count = 0;
+      while (true) {
+        const auto adjacent_lane = direction == Direction::LEFT
+                                     ? routing_graph_ptr->left(lateral_lane)
+                                     : routing_graph_ptr->right(lateral_lane);
+        if (
+          !adjacent_lane || !visited.insert(adjacent_lane->id()).second ||
+          !route_handler_ptr->isRouteLanelet(*adjacent_lane)) {
+          break;
+        }
+
+        const auto & source_centerline = lateral_lane.centerline();
+        const auto & target_centerline = adjacent_lane->centerline();
+        if (source_centerline.empty() || target_centerline.empty()) {
+          break;
+        }
+
+        const double magnitude = lanelet::geometry::distance2d(
+          source_centerline.front().basicPoint2d(), target_centerline.front().basicPoint2d());
+        if (!std::isfinite(magnitude) || magnitude < 1e-3) {
+          break;
+        }
+
+        total_magnitude += magnitude;
+        ++lane_count;
+        if (adjacent_lane->id() == target_lane_id) {
+          const double interval = direction == Direction::LEFT ? total_magnitude : -total_magnitude;
+          RCLCPP_DEBUG(
+            get_logger(),
+            "avoidance direct lane shift source=%lld target=%lld direction=%s lanes=%zu "
+            "interval=%.3f",
+            static_cast<long long>(source_lane.id()), static_cast<long long>(target_lane_id),
+            direction == Direction::LEFT ? "LEFT" : "RIGHT", lane_count, interval);
+          return {interval};
+        }
+        lateral_lane = *adjacent_lane;
+      }
+    }
+
+    // Keep a compatibility fallback for route sequences whose selected target is represented by
+    // a synthetic overlap lanelet. The preferred-lane relation is not the primary source here.
+    const auto opposite_direction =
+      direction == Direction::LEFT ? Direction::RIGHT : Direction::LEFT;
+    if (!target_lanes.empty()) {
+      const auto reverse_intervals = route_handler_ptr->getLateralIntervalsToPreferredLane(
+        target_lanes.front(), opposite_direction);
+      if (!reverse_intervals.empty()) {
+        RCLCPP_DEBUG(
+          get_logger(), "avoidance overlap shift target=%lld direction=%s interval=%.3f",
+          static_cast<long long>(target_lanes.front().id()),
+          direction == Direction::LEFT ? "LEFT" : "RIGHT", -reverse_intervals.front());
+        return {-reverse_intervals.front()};
+      }
+    }
+
+    for (const auto & lane : lanes) {
+      const auto forward_intervals =
+        route_handler_ptr->getLateralIntervalsToPreferredLane(lane, direction);
+      if (!forward_intervals.empty()) {
+        RCLCPP_DEBUG(
+          get_logger(), "avoidance preferred-lane fallback source=%lld direction=%s interval=%.3f",
+          static_cast<long long>(lane.id()), direction == Direction::LEFT ? "LEFT" : "RIGHT",
+          forward_intervals.front());
+        return {forward_intervals.front()};
+      }
+    }
+    RCLCPP_DEBUG(
+      get_logger(), "avoidance adjacent-lane shift unavailable direction=%s targets=%zu",
+      direction == Direction::LEFT ? "LEFT" : "RIGHT", target_lanes.size());
+    return {};
+  }
 
   auto shift_intervals =
     route_handler_ptr->getLateralIntervalsToPreferredLane(lanes.back(), direction);
@@ -575,11 +670,13 @@ std::vector<PhaseMetrics> calc_shift_phase_metrics(
     // this could produce an almost zero longitudinal shift length for a full-width lane change,
     // resulting in a discontinuous, excessively curved path.
     const double min_accel_to_keep_lane_changing_velocity =
-      lane_changing_duration > eps
-        ? (min_lc_vel - initial_velocity) / lane_changing_duration
-        : 0.0;
+      lane_changing_duration > eps ? (min_lc_vel - initial_velocity) / lane_changing_duration : 0.0;
+    const double minimum_allowed_acceleration = std::max(
+      {min_accel_to_keep_lane_changing_velocity,
+       common_data_ptr->lc_param_ptr->trajectory.min_longitudinal_acc,
+       common_data_ptr->bpp_param_ptr->min_acc});
     const double lane_changing_accel =
-      std::max(sampled_lane_changing_accel, min_accel_to_keep_lane_changing_velocity);
+      std::max(sampled_lane_changing_accel, minimum_allowed_acceleration);
 
     const auto lane_changing_length = calculation::calc_phase_length(
       initial_velocity, max_vel, lane_changing_accel, lane_changing_duration);

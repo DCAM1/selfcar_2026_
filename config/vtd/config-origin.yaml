@@ -11,8 +11,8 @@ files:
     upstream_path: autoware_launch/config/planning/preset/default_preset.yaml
     upstream_commit: f942598d44b5769353167c76b784323d5c14c8c7
     changed: true
-    purpose: Use predicted-path run-out handling for UNKNOWN VTD actors and disable the vehicle-class-specific dynamic stop module.
-    sha256: bf8f468d7c191ab2e38b4a3d1fec7d2457a913833266296436d117e0c9d4d223
+    purpose: Enable the mutually-exclusive class-free fixed-route bypass planner for the VTD preset; the tier4 launch default remains disabled.
+    sha256: 044d2170eee5314faa22df0413248364f8c5fce23b81209efd4ed28e0842abb1
   - repository_path: config/vtd/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
     container_target: /opt/autoware/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/multi_object_tracker_node.param.yaml
     upstream_origin: https://github.com/autowarefoundation/autoware_launch.git

@@ -75,6 +75,7 @@ NormalLaneChange::NormalLaneChange(
 
 void NormalLaneChange::update_lanes(const bool is_approved)
 {
+  is_activated_ = is_approved;
   if (is_approved) {
     return;
   }
@@ -89,6 +90,19 @@ void NormalLaneChange::update_lanes(const bool is_approved)
 
   const auto target_lanes = get_lane_change_lanes(current_lanes);
   if (target_lanes.empty()) {
+    // Avoidance-by-lane-change starts with Direction::NONE and derives the direction from an
+    // object on the current lane. Preserve the current lanes even before a target side is known;
+    // otherwise its object filtering has no lane to inspect and direction selection deadlocks.
+    lanelet::ConstLanelet current_lane;
+    if (!common_data_ptr_->route_handler_ptr->getClosestLaneletWithinRoute(
+          common_data_ptr_->get_ego_pose(), &current_lane)) {
+      return;
+    }
+    common_data_ptr_->lanes_ptr->ego_lane = current_lane;
+    common_data_ptr_->lanes_ptr->current = current_lanes;
+    common_data_ptr_->lanes_ptr->target.clear();
+    common_data_ptr_->current_lanes_path = common_data_ptr_->route_handler_ptr->getCenterLinePath(
+      current_lanes, 0.0, std::numeric_limits<double>::max());
     return;
   }
 
@@ -120,10 +134,9 @@ void NormalLaneChange::update_lanes(const bool is_approved)
   const bool has_backward_overlap =
     target_lanes.front().attributeOr("lane_change_backward_overlap", std::string{"no"}) == "yes";
   common_data_ptr_->lanes_ptr->target_neighbor =
-    has_backward_overlap
-      ? current_lanes
-      : utils::lane_change::get_target_neighbor_lanes(
-          *route_handler_ptr, current_lanes, common_data_ptr_->lc_type);
+    has_backward_overlap ? current_lanes
+                         : utils::lane_change::get_target_neighbor_lanes(
+                             *route_handler_ptr, current_lanes, common_data_ptr_->lc_type);
 
   common_data_ptr_->current_lanes_path =
     route_handler_ptr->getCenterLinePath(current_lanes, 0.0, std::numeric_limits<double>::max());
@@ -156,9 +169,9 @@ void NormalLaneChange::update_lanes(const bool is_approved)
     // overlap intentionally starts the lateral motion before that point, so retaining this one
     // connected boundary as a no-lane-change line rejects every otherwise valid split candidate.
     // Keep all other solid/no-change boundaries intact.
-    const auto & target_inner_bound =
-      direction_ == Direction::LEFT ? target_lanes.front().rightBound3d()
-                                    : target_lanes.front().leftBound3d();
+    const auto & target_inner_bound = direction_ == Direction::LEFT
+                                        ? target_lanes.front().rightBound3d()
+                                        : target_lanes.front().leftBound3d();
     constexpr double connection_tolerance = 0.1;
     const auto is_connected_to_overlap = [&](const lanelet::ConstLineString3d & line) {
       const auto endpoint_matches = [&](const lanelet::ConstPoint3d & endpoint) {
@@ -170,8 +183,8 @@ void NormalLaneChange::update_lanes(const bool is_approved)
       return endpoint_matches(line.front()) || endpoint_matches(line.back());
     };
     const auto first_connected = std::remove_if(
-      common_data_ptr_->no_lane_change_lines.begin(),
-      common_data_ptr_->no_lane_change_lines.end(), is_connected_to_overlap);
+      common_data_ptr_->no_lane_change_lines.begin(), common_data_ptr_->no_lane_change_lines.end(),
+      is_connected_to_overlap);
     common_data_ptr_->no_lane_change_lines.erase(
       first_connected, common_data_ptr_->no_lane_change_lines.end());
   }
@@ -1083,9 +1096,10 @@ FilteredLanesObjects NormalLaneChange::filter_objects() const
 
     const auto ahead_of_ego = ego_object_proximity.is_ahead_of_ego;
 
-    if (utils::lane_change::filter_target_lane_objects(
-          common_data_ptr_, ext_object, dist_ego_to_current_lanes_center, ego_object_proximity,
-          is_before_terminal, target_lane_leading, filtered_objects.target_lane_trailing)) {
+    if (
+      utils::lane_change::filter_target_lane_objects(
+        common_data_ptr_, ext_object, dist_ego_to_current_lanes_center, ego_object_proximity,
+        is_before_terminal, target_lane_leading, filtered_objects.target_lane_trailing)) {
       continue;
     }
 
@@ -1174,7 +1188,7 @@ std::vector<LaneChangePhaseMetrics> NormalLaneChange::get_lane_changing_metrics(
     common_data_ptr_, common_data_ptr_->lanes_ptr->target_neighbor,
     prep_segment.points.back().point.pose);
 
-  const auto max_lane_changing_length = std::invoke([&]() {
+  const auto raw_max_lane_changing_length = std::invoke([&]() {
     double max_length =
       transient_data.is_ego_near_current_terminal_start
         ? transient_data.dist_to_terminal_end - prep_metric.length
@@ -1183,6 +1197,19 @@ std::vector<LaneChangePhaseMetrics> NormalLaneChange::get_lane_changing_metrics(
       std::min(max_length, dist_lc_start_to_end_of_lanes - transient_data.next_dist_buffer.min);
     return max_length;
   });
+
+  const double max_lane_changing_length =
+    common_data_ptr_->lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE
+      ? raw_max_lane_changing_length *
+          std::clamp(common_data_ptr_->max_lane_changing_length_scale, 0.0, 1.0)
+      : raw_max_lane_changing_length;
+
+  if (common_data_ptr_->lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE) {
+    RCLCPP_DEBUG(
+      logger_, "avoidance lane-changing cap raw=%.5f scale=%.3f scaled=%.5f",
+      raw_max_lane_changing_length, common_data_ptr_->max_lane_changing_length_scale,
+      max_lane_changing_length);
+  }
 
   debug_metrics.max_lane_changing_length = max_lane_changing_length;
   const auto max_path_velocity = prep_segment.points.back().point.longitudinal_velocity_mps;
@@ -1413,8 +1440,9 @@ bool NormalLaneChange::check_candidate_path_safety(
   const LaneChangePath & candidate_path, const lane_change::TargetObjects & target_objects) const
 {
   const auto is_stuck = common_data_ptr_->transient_data.is_ego_stuck;
-  if (utils::lane_change::has_overtaking_turn_lane_object(
-        common_data_ptr_, filtered_objects_.target_lane_trailing)) {
+  if (
+    utils::lane_change::has_overtaking_turn_lane_object(
+      common_data_ptr_, filtered_objects_.target_lane_trailing)) {
     throw std::logic_error("Ego is nearby intersection, and there might be overtaking vehicle.");
   }
 
@@ -1519,11 +1547,16 @@ std::optional<PathWithLaneId> NormalLaneChange::compute_terminal_lane_change_pat
     common_data_ptr_, common_data_ptr_->lanes_ptr->target_neighbor,
     prepare_segment.points.back().point.pose);
 
-  const auto max_lane_changing_length = std::invoke([&]() {
+  const auto raw_max_lane_changing_length = std::invoke([&]() {
     double max_length = transient_data.dist_to_terminal_end - prep_metric.length;
     return std::min(
       max_length, dist_lc_start_to_end_of_lanes - transient_data.next_dist_buffer.min);
   });
+  const auto max_lane_changing_length =
+    common_data_ptr_->lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE
+      ? raw_max_lane_changing_length *
+          std::clamp(common_data_ptr_->max_lane_changing_length_scale, 0.0, 1.0)
+      : raw_max_lane_changing_length;
 
   const auto max_path_velocity = prepare_segment.points.back().point.longitudinal_velocity_mps;
   constexpr double lane_changing_lon_accel{0.0};
@@ -1569,8 +1602,9 @@ PathSafetyStatus NormalLaneChange::isApprovedPathSafe() const
     return {false, true};
   }
 
-  if (utils::lane_change::is_delay_lane_change(
-        common_data_ptr_, path, filtered_objects_.target_lane_leading.stopped, debug_data)) {
+  if (
+    utils::lane_change::is_delay_lane_change(
+      common_data_ptr_, path, filtered_objects_.target_lane_leading.stopped, debug_data)) {
     RCLCPP_DEBUG(logger_, "Lane change has been delayed.");
     return {false, false};
   }

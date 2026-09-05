@@ -30,6 +30,8 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <sstream>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -813,6 +815,38 @@ struct SplitTransition
   lanelet::ConstLanelets sibling_lanes;
 };
 
+struct SmoothLaneTransition
+{
+  ShiftLine shift_line;
+  lanelet::ConstLanelets current_lanes;
+  lanelet::ConstLanelets target_lanes;
+};
+
+std::string laneIdsToString(const lanelet::ConstLanelets & lanes)
+{
+  std::ostringstream stream;
+  stream << '[';
+  for (size_t i = 0; i < lanes.size(); ++i) {
+    if (i != 0) {
+      stream << ',';
+    }
+    stream << lanes.at(i).id();
+  }
+  stream << ']';
+  return stream.str();
+}
+
+const char * turnSignalToString(const uint8_t command)
+{
+  if (command == TurnIndicatorsCommand::ENABLE_LEFT) {
+    return "LEFT";
+  }
+  if (command == TurnIndicatorsCommand::ENABLE_RIGHT) {
+    return "RIGHT";
+  }
+  return "NONE";
+}
+
 std::optional<SplitTransition> getStraightSplitTransition(
   const lanelet::ConstLanelet & route_lane, const RouteHandler & route_handler)
 {
@@ -894,9 +928,11 @@ std::optional<SplitTransition> getStraightSplitTransition(
   return transition;
 }
 
-void delaySplitLaneShift(PathWithLaneId & path, const RouteHandler & route_handler)
+std::vector<SmoothLaneTransition> delaySplitLaneShift(
+  PathWithLaneId & path, const RouteHandler & route_handler)
 {
   const auto route_lanes = get_lanelet_sequence_from_path(path, route_handler);
+  std::vector<SmoothLaneTransition> smooth_transitions;
   bool modified = false;
   for (const auto & route_lane : route_lanes) {
     const auto transition = getStraightSplitTransition(route_lane, route_handler);
@@ -943,7 +979,13 @@ void delaySplitLaneShift(PathWithLaneId & path, const RouteHandler & route_handl
     }
     const double shift_end = shift_start + lane_shift_length;
 
-    for (auto & path_point : path.points) {
+    std::optional<size_t> shift_start_idx;
+    std::optional<size_t> shift_end_idx;
+    double closest_start_distance = std::numeric_limits<double>::max();
+    double closest_end_distance = std::numeric_limits<double>::max();
+    bool transition_modified = false;
+    for (size_t i = 0; i < path.points.size(); ++i) {
+      auto & path_point = path.points.at(i);
       const bool is_in_transition = std::any_of(
         transition->route_lanes.begin(), transition->route_lanes.end(), [&](const auto & lane) {
           return std::find(path_point.lane_ids.begin(), path_point.lane_ids.end(), lane.id()) !=
@@ -954,6 +996,16 @@ void delaySplitLaneShift(PathWithLaneId & path, const RouteHandler & route_handl
       }
       auto & position = path_point.point.pose.position;
       const double route_s = projectToCenterline(route_centerline, position);
+      const double start_distance = std::abs(route_s - shift_start);
+      if (start_distance < closest_start_distance) {
+        closest_start_distance = start_distance;
+        shift_start_idx = i;
+      }
+      const double end_distance = std::abs(route_s - shift_end);
+      if (end_distance < closest_end_distance) {
+        closest_end_distance = end_distance;
+        shift_end_idx = i;
+      }
       if (route_s >= shift_end) {
         continue;
       }
@@ -964,11 +1016,38 @@ void delaySplitLaneShift(PathWithLaneId & path, const RouteHandler & route_handl
       position.x = sibling_point.x + smooth_ratio * (position.x - sibling_point.x);
       position.y = sibling_point.y + smooth_ratio * (position.y - sibling_point.y);
       modified = true;
+      transition_modified = true;
+    }
+
+    if (
+      transition_modified && shift_start_idx && shift_end_idx &&
+      *shift_start_idx < *shift_end_idx) {
+      SmoothLaneTransition smooth_transition;
+      smooth_transition.shift_line.start_idx = *shift_start_idx;
+      smooth_transition.shift_line.end_idx = *shift_end_idx;
+      smooth_transition.current_lanes = transition->sibling_lanes;
+      smooth_transition.target_lanes = transition->route_lanes;
+      smooth_transitions.push_back(std::move(smooth_transition));
     }
   }
   if (modified) {
     autoware::motion_utils::insertOrientation(path.points, true);
   }
+
+  for (auto & transition : smooth_transitions) {
+    auto & shift_line = transition.shift_line;
+    shift_line.start = path.points.at(shift_line.start_idx).point.pose;
+    shift_line.end = path.points.at(shift_line.end_idx).point.pose;
+    shift_line.start_shift_length =
+      autoware::experimental::lanelet2_utils::get_arc_coordinates(
+        transition.current_lanes, shift_line.start)
+        .distance;
+    shift_line.end_shift_length =
+      autoware::experimental::lanelet2_utils::get_arc_coordinates(
+        transition.current_lanes, shift_line.end)
+        .distance;
+  }
+  return smooth_transitions;
 }
 
 void addRightTurnInnerMargin(PathWithLaneId & path, const RouteHandler & route_handler)
@@ -1069,7 +1148,7 @@ BehaviorModuleOutput getReferencePath(
     return output;
   }
 
-  delaySplitLaneShift(reference_path, *route_handler);
+  const auto smooth_transitions = delaySplitLaneShift(reference_path, *route_handler);
   addRightTurnInnerMargin(reference_path, *route_handler);
 
   // clip backward length
@@ -1097,6 +1176,60 @@ BehaviorModuleOutput getReferencePath(
   output.path = reference_path;
   output.reference_path = reference_path;
   output.drivable_area_info.drivable_lanes = drivable_lanes;
+
+  for (const auto & transition : smooth_transitions) {
+    auto shift_line = transition.shift_line;
+    shift_line.start_idx =
+      autoware::motion_utils::findNearestIndex(reference_path.points, shift_line.start.position);
+    shift_line.end_idx =
+      autoware::motion_utils::findNearestIndex(reference_path.points, shift_line.end.position);
+
+    TurnSignalInfo candidate_signal;
+    if (shift_line.start_idx < shift_line.end_idx) {
+      shift_line.start = reference_path.points.at(shift_line.start_idx).point.pose;
+      shift_line.end = reference_path.points.at(shift_line.end_idx).point.pose;
+      ShiftedPath shifted_path{
+        reference_path, std::vector<double>(reference_path.points.size(), 0.0)};
+      shifted_path.shift_length.at(shift_line.start_idx) = shift_line.start_shift_length;
+      shifted_path.shift_length.at(shift_line.end_idx) = shift_line.end_shift_length;
+      const double current_shift_length =
+        autoware::experimental::lanelet2_utils::get_arc_coordinates(
+          transition.current_lanes, current_pose)
+          .distance;
+      constexpr bool is_driving_forward = true;
+      constexpr bool egos_lane_is_shifted = true;
+      constexpr bool override_ego_stopped_check = false;
+      constexpr bool is_pull_out = false;
+      constexpr bool is_lane_change = true;
+      const auto [signal, is_ignored] =
+        planner_data->turn_signal_decider.getBehaviorTurnSignalInfo(
+          shifted_path, shift_line, transition.current_lanes, route_handler, p,
+          planner_data->self_odometry, p.vehicle_info, current_shift_length, is_driving_forward,
+          egos_lane_is_shifted, override_ego_stopped_check, is_pull_out, is_lane_change);
+      (void)is_ignored;
+      candidate_signal = signal;
+    }
+
+    const double relative_shift_length =
+      shift_line.end_shift_length - shift_line.start_shift_length;
+    const auto current_lane_ids = laneIdsToString(transition.current_lanes);
+    const auto target_lane_ids = laneIdsToString(transition.target_lanes);
+    RCLCPP_DEBUG(
+      rclcpp::get_logger("path_utils"),
+      "lane-transition turn signal: source=delaySplitLaneShift module=reference_path "
+      "start_shift_length=%.3f end_shift_length=%.3f relative_shift_length=%.3f selected=%s "
+      "current_lane_ids=%s target_lane_ids=%s",
+      shift_line.start_shift_length, shift_line.end_shift_length, relative_shift_length,
+      turnSignalToString(candidate_signal.turn_signal.command), current_lane_ids.c_str(),
+      target_lane_ids.c_str());
+
+    if (
+      output.turn_signal_info.turn_signal.command == TurnIndicatorsCommand::NO_COMMAND &&
+      (candidate_signal.turn_signal.command == TurnIndicatorsCommand::ENABLE_LEFT ||
+       candidate_signal.turn_signal.command == TurnIndicatorsCommand::ENABLE_RIGHT)) {
+      output.turn_signal_info = candidate_signal;
+    }
+  }
 
   return output;
 }

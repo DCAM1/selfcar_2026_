@@ -39,6 +39,7 @@
 #include <lanelet2_routing/RoutingGraphContainer.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -1349,7 +1350,15 @@ void updateRoadShoulderDistanceAndAvoidMargin(
     object.preferred_direction = object.direction;
   }
   if (object.preferred_direction == Direction::NONE) {
-    throw std::logic_error("preferred object direction is not initialized. something wrong.");
+    const bool object_is_on_right =
+      std::isfinite(object.to_centerline) ? object.to_centerline <= 0.0 : true;
+    object.preferred_direction = object_is_on_right ? Direction::RIGHT : Direction::LEFT;
+    object.direction = object.preferred_direction;
+    RCLCPP_ERROR_ONCE(
+      rclcpp::get_logger(logger_namespace),
+      "preferred object direction metadata is missing; recovered side from signed lateral "
+      "deviation (to_centerline=%.3f, selected=%s)",
+      object.to_centerline, object_is_on_right ? "RIGHT" : "LEFT");
   }
 
   const auto sort_overhang_points = [&object]() {
@@ -1396,11 +1405,32 @@ void updateRoadShoulderDistanceAndAvoidMargin(
 
 bool isOnRight(const ObjectData & obj)
 {
-  if (obj.direction == Direction::NONE) {
-    throw std::logic_error("object direction is not initialized. something wrong.");
+  if (obj.direction != Direction::NONE) {
+    return obj.direction == Direction::RIGHT;
   }
 
-  return obj.direction == Direction::RIGHT;
+  // The preferred direction is assigned together with the measured lateral deviation and remains
+  // valid when the active direction is temporarily cleared while avoidance lines are rebuilt.
+  if (obj.preferred_direction != Direction::NONE) {
+    RCLCPP_WARN_ONCE(
+      rclcpp::get_logger(logger_namespace),
+      "active object direction was not retained; using the preferred direction");
+    return obj.preferred_direction == Direction::RIGHT;
+  }
+
+  // Last-resort recovery for legacy/default-constructed bookkeeping data.  to_centerline is the
+  // signed lateral deviation captured by createObjectData(): positive is left and non-positive is
+  // right, which is the same convention used when direction is initially assigned.  Do not throw
+  // here: an uncaught exception kills the shared behavior-planning container and permanently stops
+  // trajectory publication.
+  const bool object_is_on_right =
+    std::isfinite(obj.to_centerline) ? obj.to_centerline <= 0.0 : true;
+  RCLCPP_ERROR_ONCE(
+    rclcpp::get_logger(logger_namespace),
+    "object direction metadata is missing; recovered side from signed lateral deviation "
+    "(to_centerline=%.3f, selected=%s)",
+    obj.to_centerline, object_is_on_right ? "RIGHT" : "LEFT");
+  return object_is_on_right;
 }
 
 double calcShiftLength(

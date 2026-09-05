@@ -553,10 +553,13 @@ ObjectData StaticObstacleAvoidanceModule::createObjectData(
     object_data, unknown_type_object_first_seen_time_map_,
     parameters_->unstable_classification_time);
 
-  // Calc lateral deviation from path to target object.
-  object_data.direction = calc_lateral_deviation(object_closest_pose, object_pose.position) > 0.0
-                            ? Direction::LEFT
-                            : Direction::RIGHT;
+  // Keep the signed lateral deviation as the recoverable source of truth for the object side.
+  // Some avoidance bookkeeping lines do not retain the active direction metadata.  Losing that
+  // metadata must not terminate the whole behavior-planning component container.
+  object_data.to_centerline =
+    calc_lateral_deviation(object_closest_pose, object_pose.position);
+  object_data.direction =
+    object_data.to_centerline > 0.0 ? Direction::LEFT : Direction::RIGHT;
   object_data.preferred_direction = object_data.direction;
 
   return object_data;

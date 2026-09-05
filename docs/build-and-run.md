@@ -56,12 +56,12 @@ Start Autoware and load the example route automatically:
 ./autoware routes/route_example.csv
 ```
 
-The VTD ego pose supplies Autoware's actual route start. To prevent silently
-planning from the wrong location, the setter waits for localization and checks
-that the vehicle is within 5 m of corrected sequence 1. It sends corrected
-sequences 2 through N-1 as waypoints and corrected sequence N as the goal. An
-`UNSET` route uses `/api/routing/set_route_points`; a `SET` route is replaced
-without clearing it through `/api/routing/change_route_points`.
+The VTD ego pose supplies Autoware's actual route start. The setter reports the
+distance to corrected sequence 1 but does not block submission on that distance
+by default. Add `--check-start --start-tolerance 5` when that check is wanted.
+It sends corrected sequences 2 through N-1 as waypoints and corrected sequence
+N as the goal. An `UNSET` route uses `/api/routing/set_route_points`; a `SET`
+route is replaced without clearing it through `/api/routing/change_route_points`.
 
 To replace a route on an Autoware instance that is already running, use a
 second terminal:
@@ -77,6 +77,11 @@ The default RViz configuration displays four transient-local previews:
 - `/debug/csv/selected_lanelets`: the selected connected route in green.
 - `/debug/csv/corrected_checkpoints`: blue waypoint dots/arrows and a blue
   star for the final goal.
+
+The four arrays are republished every second and the publisher remains alive
+after both successful and failed route API calls. Direction and goal validation
+are informational by default; use `--strict-validation` to make them block route
+submission.
 
 Preview without changing Autoware:
 

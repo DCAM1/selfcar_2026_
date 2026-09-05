@@ -220,12 +220,6 @@ private:
     const size_t current_seg_idx, const RouteHandler & route_handler,
     const double nearest_dist_threshold, const double nearest_yaw_threshold);
 
-  std::optional<TurnSignalInfo> getLaneTransitionTurnSignalInfo(
-    const PathWithLaneId & path, const Pose & current_pose, const double current_vel,
-    const size_t current_seg_idx, const RouteHandler & route_handler,
-    const double nearest_dist_threshold, const double nearest_yaw_threshold,
-    const double minimum_search_distance, const double lateral_shift_threshold);
-
   lanelet::ConstLanelet findEnableExitTurnSignalLanelet(
     const lanelet::ConstLanelet & start_lanelet, const RouteHandler & route_handler,
     bool & found_enable_exit_turn_signal);

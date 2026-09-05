@@ -1,22 +1,21 @@
 # VTD–ROS 2–Autoware bridge
 
-VTD 2025.2의 RDB 데이터를 ROS 2/Autoware 토픽으로 변환하고, Autoware의 종·횡방향 제어 명령을 VTD dynamics 입력으로 되돌려 보내는 브릿지입니다.
+`인터페이스 API.xlsx`에 정의된 HLVTD 데이터를 ROS 2/Autoware 토픽으로
+변환하고, Autoware 제어 명령을 Host로 되돌려 보내는 브릿지입니다. Ego와 객체는
+TCP 9910을 기준으로 하며, 전체 신호등 목록만 VTD raw RDB TCP 48190에서 보충합니다.
 
 ## 데이터 흐름
 
 | 방향 | VTD / ROS 입력 | 브릿지 출력 |
 |---|---|---|
-| VTD → ROS | `RDB_OBJECT_STATE` extended | `/localization/kinematic_state`, `/localization/acceleration`, `/vehicle/status/velocity_status`, TF `map→base_link`, `/clock` |
+| HLVTD → ROS | TCP 9910 DATA의 `egoX/Y/Z`, `egoHeading/Pitch/Roll` | `/localization/kinematic_state`, `/localization/acceleration`, `/vehicle/status/velocity_status`, TF `map→base_link`, `/clock` |
 | VTD → Autoware | 첫 ego pose 수신 이후 | `/localization/initialization_state = INITIALIZED` |
 | VTD bridge → Autoware | VTD ground-truth 주행 모드 | `/perception/occupancy_grid_map/map` (ego 주변 free-space grid) |
 | VTD bridge → Autoware | VTD ground-truth 주행 모드 | `/perception/obstacle_segmentation/pointcloud` (VTD 객체 bbox 합성 점군) |
-| VTD → ROS | `RDB_VEHICLE_SYSTEMS`, `RDB_DRIVETRAIN` | steering/gear/light/control-mode vehicle status |
-| VTD TCP sensor → ROS | `RDB_RAY` | `sensor_msgs/PointCloud2` |
 | HLVTD UDP `9912` → ROS | 독립 `vtd_lidar_node`가 `IVHL` 분할 패킷의 world-coordinate float32 XYZ 수신 | `/sensing/lidar/concatenated/pointcloud` (`sensor_msgs/PointCloud2`) |
-| VTD → ROS | `RDB_IMAGE`, `RDB_CAMERA` | `sensor_msgs/Image`, `CameraInfo` |
-| VTD → Autoware | `RDB_TRAFFIC_LIGHT` extended | `/simulator/input/traffic_signals` → `/perception/traffic_light_recognition/traffic_signals` |
+| HLVTD RTSP `8554` → ROS | 기존 RTSP 수신 경로 | camera image topics |
+| VTD → Autoware | raw RDB TCP 48190의 전체 신호등 목록; TCP 9910의 단일 신호등은 fallback | `/simulator/input/traffic_signals` → `/perception/traffic_light_recognition/traffic_signals` |
 | Autoware planning → RViz | 현재 도로의 맵 최고속도 | `/planning/scenario_planning/applied_velocity_limit` (표시 전용) |
-| VTD SHM → ROS | OptiXLidar `CUSTOM_OPTIX_START` + `RGBA32F` | `sensor_msgs/PointCloud2` |
 | Autoware → HLVTD | control/turn-indicator command topics | TCP `9910` headerless CONTROL (`steering`, `targetAccel`, `turnSignal`) |
 
 인터페이스 API의 상태 필드는 다음 ROS 토픽으로도 그대로 제공됩니다.
@@ -28,10 +27,8 @@ VTD 2025.2의 RDB 데이터를 ROS 2/Autoware 토픽으로 변환하고, Autowar
 | `trafficLights[].id/state` | `/vtd/traffic_lights` | `vtd_ros2_bridge/msg/VtdTrafficLightArray` |
 | `steering`, `targetAccel`, `turnSignal` | `/control/command/*` | Autoware control and turn-indicator messages |
 
-`Object(Array=30)`의 상한은 브리지에서 30개로 적용합니다. VTD 지도에서는 RDB traffic-light
-ID 하나가 신호등 전체가 아니라 빨강·노랑·초록 램프 하나를 나타냅니다. 브리지는
-OpenDRIVE `signal_type`으로 램프의 색을, RDB `stateMask`로 실제 점등 여부를 판정합니다.
-매핑되지 않은 신호에 대해서만 정규화된 `state`와 extended phase 정보를 fallback으로
+`Object(Array=30)`은 고정 30슬롯으로 해석하며 ID가 0인 슬롯은 비어 있는
+슬롯으로 처리합니다. 신호등은 문서에 정의된 `id`와 `state(0..6)`를 그대로
 사용합니다.
 
 Autoware 표준 출력은 `autoware_perception_msgs/msg/TrafficLightGroupArray`입니다. VTD/OpenDRIVE
@@ -62,19 +59,20 @@ ego와 가장 가까운 lane ID를 찾고, 그 lane의 reference-path 최고속�
   --audit-report /tmp/traffic_light_cleanup_report.json
 ```
 
-TCP 9910은 `vtd_bridge_node`가 HLVTD의 양방향 DATA/CONTROL 채널로 사용하며,
-RDB 48190은 상태 수신 전용입니다. UDP 9912는 LiDAR 전용입니다. LiDAR
+TCP 9910은 `vtd_bridge_node`가 HLVTD의 양방향 DATA/CONTROL 채널로 사용합니다.
+DATA는 고정 1109바이트, CONTROL은 고정 9바이트입니다. TCP partial read와 한
+번에 여러 record가 들어오는 경우를 모두 처리하며, 밀려 들어온 DATA는 최신
+record만 ROS에 반영합니다. 별도 raw RDB TCP 48190 연결은
+`RDB_PKG_ID_TRAFFIC_LIGHT`만 수신하며, 최신 전체 목록이 없을 때는 9910 DATA의
+단일 신호등으로 fallback합니다. UDP 9912는 LiDAR 전용입니다. LiDAR
 UDP 9912는 제어용 `vtd_bridge_node`와 분리된 `vtd_lidar_node`가
-`0.0.0.0:9912`에 직접 bind합니다. HLVTD의
-`Plugins/HLVTD/Runtime/lidar_udp_sender.py`는 SHM의 OptiXLidar `RGB32F` 데이터를
-little-endian `IVHL` 헤더(`<IHIQdHHIIHBB`, 42 bytes)와 float32 XYZ payload로 분할
-전송합니다. 브리지는 frame ID, packet index/count, 전체 point count와 point offset을
+`0.0.0.0:9912`에 직접 bind합니다. 브리지는 수신 데이터의 frame ID,
+packet index/count, 전체 point count와 point offset을
 검증하고 모든 조각을 재조립한 다음 `(0,0,0)` miss point를 제외해 PointCloud2로
 발행합니다. 현재 `scenario_simulation` 구성에서는 raw LiDAR 전처리 체인이
 실행되지 않으므로, Autoware와 RViz가 실제 구독하는
 `/sensing/lidar/concatenated/pointcloud`로 재조립된 프레임을 직접 발행합니다.
-HLVTD 외에 표준 RDB UDP 데이터그램이 들어오는 경우에는 기존 `RDB_RAY`
-변환도 계속 지원합니다. 구조나 길이가 잘못된 패킷은 PointCloud2로 발행하지 않고
+구조나 길이가 잘못된 패킷은 PointCloud2로 발행하지 않고
 `lidar_udp_rejected_packets`와 `parse_errors`에 기록합니다.
 
 `accelTgt`와 Autoware acceleration은 모두 m/s²이고, `steeringTgt`와 Autoware `steering_tire_angle`은 모두 앞바퀴 등가 조향각(rad)입니다. 따라서 steering wheel ratio나 pedal percentage로 바꾸지 않습니다.
@@ -103,7 +101,7 @@ ros2 launch vtd_ros2_bridge vtd_bridge.launch.py
 다른 VTD 호스트를 쓰려면 launch 인자로 바꿉니다.
 
 ```bash
-./src/vtd_ros2_bridge/scripts/run_bridge_docker.sh rdb_host:=192.168.0.20
+./src/vtd_ros2_bridge/scripts/run_bridge_docker.sh hlvtd_host:=192.168.0.20
 ```
 
 제어 설정은 `config/vtd_bridge.param.yaml`, LiDAR 설정은
@@ -115,23 +113,15 @@ ros2 launch vtd_ros2_bridge vtd_bridge.launch.py \
   lidar_udp_bind:=0.0.0.0 lidar_udp_port:=9912
 ```
 
-## VTD 설정
+## Host 인터페이스 설정
 
-1. 현재 프로젝트의 ModuleManager 설정에 아래 raw RDB TCP 포트가 있어야 합니다. VTD 기본 포트는 `48190`입니다.
-
-   ```xml
-   <RDB>
-       <Port name="RDBraw" number="48190" type="TCP" />
-   </RDB>
-   ```
-
-2. ego state는 extended `RDB_OBJECT_STATE`가 포함되어야 합니다. extended가 아니면 위치는 나오지만 속도와 가속도는 0으로 게시됩니다.
-3. 카메라 TCP 스트림은 VTD 기본 image port `48192`를 사용합니다. 해당 IG 설정이 TCP image stream을 만들지 않는 경우에는 image port를 `0`으로 끄고 SHM을 사용합니다.
-4. PerfectSensor 같은 별도 RDB sensor module은 프로젝트에서 정한 포트로 연결합니다. 현재 `SampleProject.vpj`의 `Sensor_MM`은 TCP `48185`이고, 일반 예제 ModuleManager 설정은 `48195`를 쓰기도 합니다. 표준 `RDB_RAY`가 포함될 때 PointCloud2로 변환됩니다.
-5. HLVTD가 LiDAR를 UDP로 보낼 때 목적지 IP를 브리지 호스트로, 목적지 포트를 `9912`로 설정합니다. 컨테이너는 `network_mode: host`여야 합니다. UDP는 연결 과정이 없으므로 `lidar_udp_bound=1`은 로컬 소켓 준비, `lidar_udp_receiving=1`은 최근 2초 안에 실제 패킷 수신을 뜻합니다. `lidar_udp_hlvtd_packets`는 유효한 `IVHL` 조각 수, `lidar_udp_completed_frames`와 `lidar_udp_pointcloud_frames`는 조각이 모두 모여 실제 발행된 프레임 수입니다.
-6. OptiXLidar/RoboSense 계열이 System V SHM을 쓰면 `config/vtd_bridge.param.yaml`의 `shm.key`를 설정합니다. 이 설치본에서 확인된 일반 IG key는 `33130 (0x816a)`, RoboSense 샘플 기본값은 `33162`입니다. 실제 값은 VTD IG 설정과 `ipcs -m`으로 확인해야 합니다.
-
-사용하지 않는 채널은 port를 `0`으로 설정하면 재접속 시도를 하지 않습니다.
+1. TCP 9910은 Host가 listen하고 학생 PC가 하나의 persistent connection을
+   만듭니다. 같은 socket에서 Host→학생 DATA와 학생→Host CONTROL이 오갑니다.
+2. RTSP 8554는 기존 영상 수신 경로를 사용합니다.
+3. UDP 9912는 Host가 학생 PC로 LiDAR를 전송합니다. `vtd_lidar_node`가
+   `0.0.0.0:9912`에 bind합니다.
+4. 전체 신호등 수신을 위해 VTD raw RDB TCP 48190이 열려 있어야 합니다. 이 연결은
+   신호등 패키지만 처리하고 ego·객체·제어 데이터에는 사용하지 않습니다.
 
 ## 좌표 동기화
 
@@ -160,22 +150,30 @@ p_autoware = R(map_offset.yaw) · p_vtd + [map_offset.x, map_offset.y, map_offse
 
 - 이 노드는 `/vehicle/status/control_mode`를 `AUTONOMOUS`로 합성합니다. 실제 VTD 운전자 모드 상태가 아니라 Autoware vehicle interface 계약을 만족시키기 위한 값입니다.
 - 첫 Control 메시지 전에는 가속·조향을 덮어쓰지 않고 기본 기어 `D`만 VTD에 전송합니다. 첫 Control 이후 명령이 `control_timeout_sec` 동안 끊기면 `watchdog_deceleration`을 보냅니다.
-- 기본 설정은 VTD가 RDB 기어 변경을 적용하는 동안에도 Autoware가 승인한 기어 명령을 `/vehicle/status/gear_status`에 즉시 반영합니다. 실제 VTD drivetrain 피드백만 표시하려면 `report_commanded_gear: false`로 바꿉니다.
-- 좌/우 방향지시등과 비상등 명령은 각각 `/control/command/turn_indicators_cmd`, `/control/command/hazard_lights_cmd`에서 받아 VTD RDB driver flags로 전송합니다. 수락 상태는 `/vehicle/status/turn_indicators_status`, `/vehicle/status/hazard_lights_status`로 게시합니다.
+- API에는 gear feedback이 없으므로 Autoware가 승인한 기어 명령을 `/vehicle/status/gear_status`에 반영합니다.
+- 좌/우 방향지시등과 비상등 명령은 각각 `/control/command/turn_indicators_cmd`, `/control/command/hazard_lights_cmd`에서 받아 9910 CONTROL의 `turnSignal`로 전송합니다. 수락 상태는 차량 status 토픽으로 게시합니다.
 - Autoware가 미교전 또는 명령 종료를 나타낼 때 보내는 `NO_COMMAND`는 VTD에서 직전 램프 상태가 남지 않도록 `DISABLE`로 정규화합니다.
-- 기본 `report_commanded_lights: true`는 VTD 램프의 실제 점멸 주기에 따라 status가 매번 DISABLE로 흔들리지 않도록 수락된 명령 상태를 유지합니다. VTD `RDB_VEHICLE_SYSTEMS.lightMask`를 직접 상태로 쓰려면 `false`로 설정합니다.
+- 방향지시등 status는 API에 실제 lamp feedback이 없으므로 수락된 명령 상태를 유지합니다.
 - `scenario_simulation:=true`에서는 Autoware occupancy-grid 노드가 비활성화되므로, 브릿지가 ego 주변의 빈 점유 격자를 발행해 behavior path planner의 입력 계약을 만족시킵니다. 실제 센서 기반 점유 격자를 연결할 때는 `publish_empty_occupancy_grid: false`로 바꿉니다.
 - 같은 모드에서는 VTD 객체 바운딩박스의 모서리를 합성 obstacle pointcloud로 발행합니다. 객체가 없을 때만 빈 cloud가 되며, VTD LiDAR/실제 perception 출력을 별도로 연결하면 `publish_empty_obstacle_pointcloud: false`로 바꿉니다.
 - 현재 시나리오는 `<Description ... Control="external" Name="Ego"/>`이므로 기본값은 `ego_player_id: -1`, `ego_name: Ego`입니다. 브릿지가 첫 object-state에서 실제 player ID를 찾은 후 그 ID로 제어합니다.
 - Autoware의 steering tire rotation rate는 VTD의 `steeringSpeed`(steering-wheel 계열 값)와 의미가 같다고 보장되지 않아 보내지 않습니다. 앞바퀴 target angle만 사용합니다.
-- `/clock`은 RDB 패키지 수가 아니라 `state/control`의 고유 frame마다 한 번만 게시합니다. `send_control_every_frame: true`에서도 조향·램프 subscriber callback이 같은 frame에 패킷을 추가 전송하지 않으므로 VTD 제어는 frame당 한 번입니다.
-- VTD에서 `Stop` 후 `Start`해 raw simulation time/frame이 0으로 돌아가도 ROS 시간은 뒤로 돌리지 않습니다. 첫 세션은 system time에 고정하고 이후 세션에는 연속 offset을 적용하며, reset 시 ego 선택·차량 상태·제어/센서 캐시를 비웁니다. 따라서 기존 TF 캐시가 새 데이터를 `TF_OLD_DATA`로 버리지 않아 Autoware 재시작 없이 다시 사용할 수 있습니다.
+- API에는 timestamp와 ego speed/acceleration이 없으므로 `/clock`은 DATA 수신의
+  monotonic wall-time 간격으로 만들고, ego 속도·가속도는 연속 pose를 차분해
+  계산합니다. 실제 steering/gear/light feedback도 없으므로 해당 vehicle status는
+  가장 최근에 수락한 Autoware 명령 상태를 게시합니다.
+- 제어 subscriber callback은 최신 명령만 저장합니다. 40ms wall timer가 그
+  시점의 최신 명령을 depth-1 mailbox에 넣고, 전용 TCP 송신 스레드가 9바이트를
+  끝까지 전송합니다. 송신 중 도착한 중간 명령은 최신값으로 덮어씁니다.
+- 9910 연결이 끊기면 부분 송신과 pending 명령을 폐기합니다. 재연결 대기 중 새 VTD frame이 들어오면 그 시점의 최신 명령 하나만 유지하며, 연결 복구 후 과거 FIFO를 재생하지 않습니다. `/diagnostics`의 `control_packets_queued`, `control_packets_sent`, `control_packets_overwritten`에서 mailbox 동작을 확인할 수 있습니다.
+- 9910이 재연결되어도 ROS 시간은 뒤로 돌리지 않습니다. 새 DATA 세션은 기존
+  timestamp 이후에서 다시 시작하므로 TF가 새 데이터를 `TF_OLD_DATA`로 버리지 않습니다.
 - `/home/a/autoware_run`은 `scenario_simulation:=true`, `localization_sim_mode:=none`으로 실행되어 `simple_planning_simulator`를 띄우지 않습니다. 따라서 VTD 브릿지가 `/localization/kinematic_state`와 `map→base_link`의 유일한 발행자입니다.
 - `/simulator/input/traffic_signals`은 Autoware의 dummy traffic-light passthrough를 거쳐 계획 모듈이 사용하는 `/perception/traffic_light_recognition/traffic_signals`로 전달됩니다.
 - 브릿지와 Autoware 컨테이너는 모두 host network/IPC와 `/home/a/autoware/docker/files/cyclonedds.xml`을 사용합니다. 이 설정을 빼면 서로의 토픽이 보이지 않을 수 있습니다.
-- `TurnIndicatorsCommand`의 좌/우와 `HazardLightsCommand`의 비상등은 RDB `flags`로 변환되며, 비상등이 좌/우 명령보다 우선합니다.
-- `/vtd/objects`와 `/vtd/traffic_lights`는 RDB 상태 채널에 해당 패키지가 포함될 때 갱신됩니다. 현재 시나리오에 해당 객체가 없으면 배열은 빈 상태가 정상입니다.
-- 현재 HLVTD 설정의 OptiXLidar 출력은 `WORLD`, `1086x32`, `RT_FORMAT_FLOAT3`이므로 `IVHL` PointCloud2 frame은 `map`입니다. `RDB_RAY`는 패키지의 coordinate type에 따라 `map`, `base_link`, `lidar_link`를 선택합니다.
+- `TurnIndicatorsCommand`의 좌/우와 `HazardLightsCommand`의 비상등은 `turnSignal` 0/1/2로 변환되며, 비상등에는 별도 API 값이 없어 `turnSignal=0`을 전송합니다.
+- `/vtd/objects`는 9910 DATA를 받을 때마다 갱신됩니다. `/vtd/traffic_lights`는 최근
+  raw RDB 전체 목록을 사용하고, RDB가 끊겼을 때만 9910 DATA의 신호등으로 대체됩니다.
 - RoboSense 전용 플러그인이 거리/각도를 vendor packet 형식으로만 구성한 경우에는 이 generic XYZ 변환 대신 해당 모델의 UDP/packet decoder를 추가해야 합니다.
 
 ## 빠른 확인
@@ -192,4 +190,6 @@ ros2 topic hz /sensing/camera/camera0/image_raw
 ros2 topic echo /diagnostics --once
 ```
 
-연결은 되었는데 ego update가 0이면 가장 먼저 `ego_player_id`와 VTD raw RDB의 extended object-state 출력을 확인합니다. 진단 정보에는 각 채널 연결 상태, ego/sensor frame 수, 제어 송신 수, parser error 수가 포함됩니다.
+연결은 되었는데 ego update가 0이면 `/diagnostics`의
+`participant_data_packets_decoded`와 `control_rx_bytes`를 확인합니다. 전자는 1109바이트
+DATA record 수, 후자는 TCP 9910으로 수신한 총 byte 수입니다.

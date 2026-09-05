@@ -1,0 +1,66 @@
+/**:
+  ros__parameters:
+    fixed_route_bypass:
+      planning_horizon_m: 120.0
+      collision_horizon_s: 12.0
+      path_sampling_interval_m: 0.5
+      prediction_sampling_interval_s: 0.2
+      sweep_max_step_m: 0.25
+      sweep_max_yaw_step_rad: 0.035
+      route_boundary_margin_m: 0.20
+      route_gap_tolerance_m: 0.03
+      corridor_area_tolerance_m2: 0.001
+      object_collision_margin_m: 0.35
+      object_uncertainty_base_m: 0.10
+      object_uncertainty_growth_mps: 0.08
+      min_predicted_path_confidence: 0.05
+      stationary_speed_threshold_mps: 0.25
+      stationary_displacement_threshold_m: 0.30
+      crossing_speed_threshold_mps: 0.35
+      history_window_s: 1.0
+      history_min_samples: 3
+      object_dropout_ttl_s: 0.50
+      uuid_association_distance_m: 2.0
+      uuid_association_size_tolerance_m: 1.0
+      cluster_longitudinal_gap_m: 8.0
+      obstacle_longitudinal_margin_m: 4.0
+      shift_prepare_distance_m: 15.0
+      shift_return_distance_m: 15.0
+      lateral_offsets_m: [-1.6, -1.2, -0.8, -0.4, 0.0, 0.4, 0.8, 1.2, 1.6]
+      max_geometry_candidates: 32
+      normal_target_velocity_mps: 10.0
+      reduced_velocity_ratio: 0.55
+      creep_velocity_mps: 0.30
+      accelerated_velocity_ratio: 1.0
+      minimum_progress_m: 1.0
+      progress_horizon_s: 4.0
+      zero_velocity_epsilon_mps: 0.03
+      startup_enter_velocity_mps: 0.05
+      startup_release_velocity_mps: 0.20
+      startup_moving_confirmation_points: 2
+      max_startup_prefix_distance_m: 2.0
+      max_startup_prefix_time_s: 5.0
+      startup_velocity_drop_tolerance_mps: 0.05
+      endpoint_stop_tolerance_m: 2.0
+      max_longitudinal_acceleration_mps2: 1.0
+      min_longitudinal_acceleration_mps2: -1.0
+      max_longitudinal_jerk_mps3: 1.0
+      min_longitudinal_jerk_mps3: -1.0
+      max_lateral_acceleration_mps2: 0.65
+      max_steering_rate_radps: 0.21
+      nearest_distance_threshold_m: 3.0
+      nearest_yaw_threshold_rad: 1.0472
+      max_input_stamp_skew_s: 0.50
+      last_valid_hold_time_s: 0.50
+      last_valid_min_horizon_m: 8.0
+      commitment_release_distance_m: 5.0
+      emergency_deceleration_mps2: -5.0
+      emergency_stationary_length_m: 2.0
+      emergency_braking_margin_m: 2.0
+      emergency_min_points: 5
+      corridor_transition_overlap_m: 5.0
+      corridor_endpoint_buffer_m: 5.0
+      corridor_path_clip_half_width_m: 10.0
+      debug_logging: true
+      # Set only by the patched mutually-exclusive tier4 launch wiring.
+      exclusive_mode_verified: false

@@ -112,8 +112,10 @@ rclcpp::Logger get_logger()
 
 bool is_mandatory_lane_change(const ModuleType lc_type)
 {
-  return lc_type == LaneChangeModuleType::NORMAL ||
-         lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE;
+  // Obstacle avoidance must select a legal adjacent lane even when ego already occupies the
+  // route-preferred lane.  Only route-driven normal lane changes are mandatory/preferred-lane
+  // changes; avoidance-by-lane-change uses the non-mandatory adjacent-lane selection path.
+  return lc_type == LaneChangeModuleType::NORMAL;
 }
 
 void set_prepare_velocity(
@@ -137,6 +139,14 @@ lanelet::ConstLanelets get_target_neighbor_lanes(
   const RouteHandler & route_handler, const lanelet::ConstLanelets & current_lanes,
   const LaneChangeModuleType & type)
 {
+  // Obstacle avoidance may start from either a preferred or a non-preferred route lane. Its
+  // available longitudinal distance must always be measured on the current/source lane chain;
+  // applying the ordinary mandatory/non-mandatory preferred-lane filter can otherwise make the
+  // source set empty and reject every avoidance candidate.
+  if (type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE) {
+    return current_lanes;
+  }
+
   lanelet::ConstLanelets neighbor_lanes;
 
   for (const auto & current_lane : current_lanes) {
@@ -433,6 +443,35 @@ std::optional<lanelet::ConstLanelet> get_target_lane_for_non_mandatory_lane_chan
   const auto route_handler_ptr = common_data_ptr->route_handler_ptr;
   const auto routing_graph_ptr = route_handler_ptr->getRoutingGraphPtr();
 
+  // Avoidance is allowed to move away from the preferred lane when that is the safe side of the
+  // obstacle. Select its immediate neighbor without the preferred-lane restriction used by
+  // ordinary non-mandatory lane changes. If the avoidance module requested a farther lane after
+  // checking every intermediate lane, follow the same route-approved lateral chain to that exact
+  // target. Lane-changeable left/right relations preserve travel direction and exclude shoulders
+  // and oncoming lanes.
+  if (
+    common_data_ptr->lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE &&
+    (direction == Direction::LEFT || direction == Direction::RIGHT)) {
+    auto lateral_lane = ref_lane;
+    std::unordered_set<lanelet::Id> visited{ref_lane.id()};
+    while (true) {
+      const auto next_lane = direction == Direction::LEFT ? routing_graph_ptr->left(lateral_lane)
+                                                          : routing_graph_ptr->right(lateral_lane);
+      if (
+        !next_lane || !visited.insert(next_lane->id()).second ||
+        !route_handler_ptr->isRouteLanelet(*next_lane)) {
+        break;
+      }
+      if (
+        !common_data_ptr->requested_target_lane_id ||
+        next_lane->id() == common_data_ptr->requested_target_lane_id.value()) {
+        return *next_lane;
+      }
+      lateral_lane = *next_lane;
+    }
+    return std::nullopt;
+  }
+
   if (direction == Direction::RIGHT) {
     // Get right lanelet if preferred lane is on the left
     if (route_handler_ptr->getNumLaneToPreferredLane(ref_lane, direction) < 0) {
@@ -440,7 +479,7 @@ std::optional<lanelet::ConstLanelet> get_target_lane_for_non_mandatory_lane_chan
     }
 
     const auto right_lanes = routing_graph_ptr->right(ref_lane);
-    if (right_lanes) {
+    if (right_lanes && route_handler_ptr->isRouteLanelet(*right_lanes)) {
       return *right_lanes;
     }
   }
@@ -451,7 +490,7 @@ std::optional<lanelet::ConstLanelet> get_target_lane_for_non_mandatory_lane_chan
       return std::nullopt;
     }
     const auto left_lanes = routing_graph_ptr->left(ref_lane);
-    if (left_lanes) {
+    if (left_lanes && route_handler_ptr->isRouteLanelet(*left_lanes)) {
       return *left_lanes;
     }
   }

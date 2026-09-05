@@ -1,0 +1,53 @@
+/**:
+  ros__parameters:
+    # These modules remain loaded for route/regulatory handling, but UNKNOWN
+    # occupancy conflicts are owned exclusively by the fixed-route planner.
+    crosswalk:
+      object_filtering:
+        target_object:
+          unknown: false
+          bicycle: false
+          motorcycle: false
+          pedestrian: false
+    intersection:
+      stuck_vehicle:
+        target_type:
+          car: false
+          bus: false
+          truck: false
+          trailer: false
+          motorcycle: false
+          bicycle: false
+          unknown: false
+      yield_stuck:
+        target_type:
+          car: false
+          bus: false
+          truck: false
+          trailer: false
+          motorcycle: false
+          bicycle: false
+          unknown: false
+      collision_detection:
+        target_type:
+          car: false
+          bus: false
+          truck: false
+          trailer: false
+          motorcycle: false
+          bicycle: false
+          unknown: false
+    roundabout:
+      collision_detection:
+        target_type:
+          car: false
+          bus: false
+          truck: false
+          trailer: false
+          motorcycle: false
+          bicycle: false
+          unknown: false
+    detection_area:
+      target_filtering:
+        pointcloud: false
+        unknown: false

@@ -3,6 +3,12 @@
     avoidance_by_lane_change:
       execute_object_longitudinal_margin: 80.0
       execute_only_when_lane_change_finish_before_object: false
+      max_lane_changing_length_scale: 0.8
+      obstacle_velocity_limit_ratio: 0.6
+      disable_lateral_acceleration_limit: true
+      enable_direct_multi_lane_change: true
+      empty_lane_check_forward_distance: 80.0
+      empty_lane_check_backward_distance: 20.0
 
       # avoidance is performed for the object type with true
       target_object:

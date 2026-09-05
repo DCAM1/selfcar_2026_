@@ -1,6 +1,5 @@
 #include "vtd_ros2_bridge/hlvtd_control_client.hpp"
 #include "vtd_ros2_bridge/rdb_codec.hpp"
-#include "vtd_ros2_bridge/rdb_shm_reader.hpp"
 #include "vtd_ros2_bridge/rdb_tcp_client.hpp"
 
 #include <VtdToolkit/viRDBIcd.h>
@@ -149,14 +148,18 @@ void append_value(DiagnosticStatus &status, const std::string &key,
 class VtdBridgeNode : public rclcpp::Node {
 public:
   VtdBridgeNode() : Node("vtd_bridge") {
-    host_ = declare_parameter<std::string>("rdb_host", "127.0.0.1");
-    state_port_ = declare_parameter<int>("state_port", RDB_DEFAULT_PORT);
-    sensor_port_ = declare_parameter<int>("sensor_port", 48195);
-    image_port_ = declare_parameter<int>("image_port", RDB_IMAGE_PORT);
-    control_host_ = declare_parameter<std::string>("control.host", host_);
+    control_host_ = declare_parameter<std::string>("control.host", "127.0.0.1");
     control_port_ = declare_parameter<int>("control.port", 9910);
     control_reconnect_delay_ms_ =
         declare_parameter<int>("control.reconnect_delay_ms", 1000);
+    control_send_period_ms_ =
+        declare_parameter<int>("control.send_period_ms", 40);
+    traffic_light_rdb_host_ = declare_parameter<std::string>(
+        "traffic_light.rdb_host", control_host_);
+    traffic_light_rdb_port_ =
+        declare_parameter<int>("traffic_light.rdb_port", RDB_DEFAULT_PORT);
+    traffic_light_rdb_max_age_sec_ = declare_parameter<double>(
+        "traffic_light.rdb_max_age_sec", 1.0);
     ego_player_id_ = declare_parameter<int>("ego_player_id", -1);
     ego_name_ = declare_parameter<std::string>("ego_name", "Ego");
     camera_id_ = declare_parameter<int>("camera_id", -1);
@@ -198,8 +201,6 @@ public:
         declare_parameter<double>("limits.max_acceleration", 3.0);
     max_steering_angle_ =
         declare_parameter<double>("limits.max_steering_angle", 0.7);
-    send_control_every_frame_ =
-        declare_parameter<bool>("send_control_every_frame", true);
     report_autonomous_mode_ =
         declare_parameter<bool>("report_autonomous_mode", true);
     report_commanded_gear_ =
@@ -401,61 +402,54 @@ public:
           rviz_velocity_limit_pub_->publish(output);
         });
 
-    state_client_ = make_client("state/control", state_port_);
-    sensor_client_ = make_client("sensor", sensor_port_);
-    image_client_ = make_client("image", image_port_);
     control_client_ = std::make_unique<HlvtdControlClient>(
         control_host_, control_port_,
         [this](const bool connected) {
-          RCLCPP_INFO(get_logger(), "HLVTD control channel %s (%s:%d)",
+          on_hlvtd_connection(connected);
+          RCLCPP_INFO(get_logger(), "HLVTD DATA/CONTROL channel %s (%s:%d)",
                       connected ? "connected" : "disconnected",
                       control_host_.c_str(), control_port_);
         },
-        std::chrono::milliseconds(
-            std::max(1, control_reconnect_delay_ms_)));
-    shm_reader_ = std::make_unique<RdbShmReader>(
-        shm_key_, static_cast<std::uint32_t>(shm_check_mask_),
+        std::chrono::milliseconds(std::max(1, control_reconnect_delay_ms_)),
+        [this](const HlvtdParticipantData &data) {
+          on_hlvtd_participant_data(data);
+        });
+    traffic_light_rdb_client_ = std::make_unique<RdbTcpClient>(
+        "traffic-light", traffic_light_rdb_host_, traffic_light_rdb_port_,
         [this](const std::uint8_t *data, const std::size_t size) {
-          on_rdb_message("shm", data, size);
+          on_traffic_light_rdb_message(data, size);
         },
         [this](const bool connected) {
-          RCLCPP_INFO(get_logger(), "VTD RDB shared memory %s (key=%d)",
-                      connected ? "attached" : "detached", shm_key_);
+          RCLCPP_INFO(get_logger(),
+                      "VTD RDB traffic-light channel %s (%s:%d)",
+                      connected ? "connected" : "disconnected",
+                      traffic_light_rdb_host_.c_str(), traffic_light_rdb_port_);
         });
 
     diagnostics_timer_ = create_wall_timer(std::chrono::seconds(1),
                                            [this]() { publish_diagnostics(); });
+    control_send_timer_ = create_wall_timer(
+        std::chrono::milliseconds(std::max(1, control_send_period_ms_)),
+        [this]() { send_control(); });
 
     load_traffic_light_id_map();
 
-    state_client_->start();
-    sensor_client_->start();
-    image_client_->start();
+    traffic_light_rdb_client_->start();
     control_client_->start();
-    shm_reader_->start();
 
     RCLCPP_INFO(get_logger(),
-                "VTD bridge ready: host=%s state=%d sensor=%d image=%d "
-                "control=%s:%d ego_player_id=%d",
-                host_.c_str(), state_port_, sensor_port_, image_port_,
-                control_host_.c_str(), control_port_, ego_player_id_);
+                "VTD bridge ready: HLVTD DATA/CONTROL=%s:%d, LiDAR=UDP/9912, "
+                "supplemental traffic lights=RDB %s:%d",
+                control_host_.c_str(), control_port_,
+                traffic_light_rdb_host_.c_str(), traffic_light_rdb_port_);
   }
 
   ~VtdBridgeNode() override {
+    if (traffic_light_rdb_client_) {
+      traffic_light_rdb_client_->stop();
+    }
     if (control_client_) {
       control_client_->stop();
-    }
-    if (shm_reader_) {
-      shm_reader_->stop();
-    }
-    if (image_client_) {
-      image_client_->stop();
-    }
-    if (sensor_client_) {
-      sensor_client_->stop();
-    }
-    if (state_client_) {
-      state_client_->stop();
     }
   }
 
@@ -480,6 +474,24 @@ private:
     double ros_time{};
     bool session_reset{};
     double previous_raw_time{};
+  };
+
+  struct ParticipantTimeUpdate {
+    double ros_time{};
+    double dt{};
+    bool derivative_valid{};
+  };
+
+  struct ParticipantMotionState {
+    bool valid{};
+    bool velocity_valid{};
+    double x{};
+    double y{};
+    double z{};
+    double heading{};
+    double longitudinal_velocity{};
+    double lateral_velocity{};
+    double heading_rate{};
   };
 
   static double system_time_seconds() {
@@ -532,11 +544,193 @@ private:
     return sim_stamp(raw_sim_time + sim_time_offset_.load());
   }
 
+  static double normalize_angle(const double angle) {
+    return std::atan2(std::sin(angle), std::cos(angle));
+  }
+
+  void on_hlvtd_connection(const bool connected) {
+    if (connected) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(time_mutex_);
+    participant_time_initialized_ = false;
+    participant_motion_ = ParticipantMotionState{};
+    state_frame_received_ = false;
+  }
+
+  ParticipantTimeUpdate next_participant_time() {
+    const auto steady_now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(time_mutex_);
+    if (!participant_time_initialized_) {
+      const double minimum_next =
+          time_mapping_initialized_
+              ? last_ros_state_time_ + std::max(clock_restart_gap_sec_, 1.0e-6)
+              : 0.0;
+      last_ros_state_time_ = anchor_clock_to_system_time_
+                                 ? std::max(minimum_next, system_time_seconds())
+                                 : minimum_next;
+      last_participant_receive_time_ = steady_now;
+      participant_time_initialized_ = true;
+      time_mapping_initialized_ = true;
+      return {last_ros_state_time_, 0.0, false};
+    }
+
+    const double dt = std::chrono::duration<double>(
+                          steady_now - last_participant_receive_time_)
+                          .count();
+    last_participant_receive_time_ = steady_now;
+    if (std::isfinite(dt) && dt > 0.0) {
+      last_ros_state_time_ += dt;
+    }
+    return {last_ros_state_time_, dt,
+            std::isfinite(dt) && dt >= 1.0e-4 && dt <= 1.0};
+  }
+
+  static bool finite_ego(const HlvtdParticipantData &data) {
+    return std::isfinite(data.ego_x) && std::isfinite(data.ego_y) &&
+           std::isfinite(data.ego_z) && std::isfinite(data.ego_heading) &&
+           std::isfinite(data.ego_pitch) && std::isfinite(data.ego_roll);
+  }
+
+  static bool finite_object(const HlvtdParticipantObject &object) {
+    return std::isfinite(object.x) && std::isfinite(object.y) &&
+           std::isfinite(object.z) && std::isfinite(object.heading) &&
+           std::isfinite(object.speed) && std::isfinite(object.length) &&
+           std::isfinite(object.width) && std::isfinite(object.height);
+  }
+
+  void on_traffic_light_rdb_message(const std::uint8_t *data,
+                                    const std::size_t size) {
+    if (size < sizeof(RDB_MSG_HDR_t)) {
+      ++parse_errors_;
+      return;
+    }
+
+    bool contains_traffic_lights = false;
+    std::string error;
+    const bool valid = parse_rdb_message(
+        data, size,
+        [this, &contains_traffic_lights](const RDB_MSG_HDR_t &,
+                                         const RdbEntryView &entry) {
+          if (entry.header->pkgId != RDB_PKG_ID_TRAFFIC_LIGHT) {
+            return;
+          }
+          contains_traffic_lights = true;
+          handle_traffic_lights(entry);
+        },
+        &error);
+    if (!valid) {
+      ++parse_errors_;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                           "Rejected traffic-light RDB message: %s",
+                           error.c_str());
+      return;
+    }
+    if (contains_traffic_lights) {
+      std::lock_guard<std::mutex> lock(api_mutex_);
+      last_rdb_traffic_light_update_ = std::chrono::steady_clock::now();
+      rdb_traffic_light_received_ = true;
+      ++rdb_traffic_light_frames_;
+    }
+  }
+
+  std::vector<VtdTrafficLight> current_traffic_lights(
+      const HlvtdParticipantTrafficLight &fallback) {
+    std::vector<VtdTrafficLight> traffic_lights;
+    const auto now = std::chrono::steady_clock::now();
+    {
+      std::lock_guard<std::mutex> lock(api_mutex_);
+      const bool cache_is_fresh =
+          rdb_traffic_light_received_ &&
+          std::chrono::duration<double>(now - last_rdb_traffic_light_update_)
+                  .count() <= traffic_light_rdb_max_age_sec_;
+      if (cache_is_fresh && !traffic_lights_by_id_.empty()) {
+        traffic_lights.reserve(traffic_lights_by_id_.size());
+        for (const auto &[id, traffic_light] : traffic_lights_by_id_) {
+          (void)id;
+          traffic_lights.push_back(traffic_light);
+        }
+      }
+    }
+
+    if (!traffic_lights.empty()) {
+      traffic_light_source_.store(1);
+      return traffic_lights;
+    }
+
+    traffic_light_source_.store(0);
+    if (fallback.id == 0) {
+      return traffic_lights;
+    }
+    if (fallback.state > 6U) {
+      ++parse_errors_;
+      return traffic_lights;
+    }
+    VtdTrafficLight light;
+    light.id = fallback.id;
+    light.state = fallback.state;
+    traffic_lights.push_back(light);
+    return traffic_lights;
+  }
+
+  void on_hlvtd_participant_data(const HlvtdParticipantData &data) {
+    if (!finite_ego(data)) {
+      ++parse_errors_;
+      return;
+    }
+
+    const auto timing = next_participant_time();
+    const auto stamp = sim_stamp(timing.ros_time);
+    last_sim_time_.store(timing.ros_time);
+    state_frame_received_ = true;
+    last_frame_no_.fetch_add(1U);
+    if (publish_clock_) {
+      rosgraph_msgs::msg::Clock clock;
+      clock.clock = stamp;
+      clock_pub_->publish(clock);
+      ++clock_updates_;
+    }
+
+    publish_hlvtd_ego_state(data, stamp, timing);
+    ++ego_updates_;
+
+    std::vector<VtdObject> objects;
+    objects.reserve(kHlvtdObjectCount);
+    for (const auto &source : data.objects) {
+      // The fixed array has no count field. An all-zero ID denotes an unused
+      // slot in the supplied participant interface.
+      if (source.id == 0U) {
+        continue;
+      }
+      if (!finite_object(source) || source.length <= 0.0F ||
+          source.width <= 0.0F || source.height <= 0.0F) {
+        ++objects_dropped_;
+        continue;
+      }
+      VtdObject object;
+      object.id = source.id;
+      const auto position = map_position(source.x, source.y, source.z);
+      object.x = static_cast<float>(position[0]);
+      object.y = static_cast<float>(position[1]);
+      object.z = flatten_z_ ? 0.0F : static_cast<float>(position[2]);
+      object.heading = static_cast<float>(source.heading + map_yaw_offset_);
+      object.speed = source.speed;
+      object.length = source.length;
+      object.width = source.width;
+      object.height = source.height;
+      objects.push_back(object);
+    }
+
+    auto traffic_lights = current_traffic_lights(data.traffic_light);
+    publish_api_arrays(stamp, std::move(objects), std::move(traffic_lights));
+  }
+
   void reset_session_state(const double previous_raw_time,
                            const double new_raw_time) {
     selected_ego_id_.store(-1);
     last_occupancy_grid_sim_time_.store(-1.0);
     last_api_publish_frame_.store(std::numeric_limits<std::uint32_t>::max());
+    last_control_queue_frame_.store(std::numeric_limits<std::uint32_t>::max());
     watchdog_active_.store(false);
     {
       std::lock_guard<std::mutex> lock(command_mutex_);
@@ -565,20 +759,6 @@ private:
                 "VTD session reset detected (sim time %.3f -> %.3f); "
                 "preserving monotonic ROS time and clearing bridge state",
                 previous_raw_time, new_raw_time);
-  }
-
-  std::unique_ptr<RdbTcpClient> make_client(const std::string &label,
-                                            const int port) {
-    return std::make_unique<RdbTcpClient>(
-        label, host_, port,
-        [this, label](const std::uint8_t *data, const std::size_t size) {
-          on_rdb_message(label, data, size);
-        },
-        [this, label, port](const bool connected) {
-          RCLCPP_INFO(get_logger(), "VTD RDB %s channel %s (%s:%d)",
-                      label.c_str(), connected ? "connected" : "disconnected",
-                      host_.c_str(), port);
-        });
   }
 
   void on_rdb_message(const std::string &channel, const std::uint8_t *data,
@@ -660,8 +840,10 @@ private:
         if (previous_api_frame != message.frameNo) {
           publish_api_arrays(message);
         }
-        if (send_control_every_frame_) {
-          send_control(message.simTime, message.frameNo);
+        const auto previous_control_frame =
+            last_control_queue_frame_.exchange(message.frameNo);
+        if (previous_control_frame != message.frameNo) {
+          send_control();
         }
       }
       break;
@@ -1146,8 +1328,16 @@ private:
       }
     }
 
+    publish_api_arrays(message_stamp(message.simTime), std::move(objects),
+                       std::move(traffic_lights));
+  }
+
+  void publish_api_arrays(const builtin_interfaces::msg::Time &stamp,
+                          std::vector<VtdObject> objects,
+                          std::vector<VtdTrafficLight> traffic_lights) {
+
     VtdObjectArray object_array;
-    object_array.header.stamp = message_stamp(message.simTime);
+    object_array.header.stamp = stamp;
     object_array.header.frame_id = map_frame_;
 
     // /vtd/objects is the unfiltered API feed, while Autoware perception is a
@@ -1225,14 +1415,13 @@ private:
     ++object_updates_;
 
     VtdTrafficLightArray traffic_array;
-    traffic_array.header.stamp = message_stamp(message.simTime);
+    traffic_array.header.stamp = stamp;
     traffic_array.header.frame_id = map_frame_;
     traffic_array.traffic_lights = traffic_lights;
     traffic_lights_pub_->publish(traffic_array);
     ++traffic_light_updates_;
 
-    publish_autoware_traffic_lights(message_stamp(message.simTime),
-                                    traffic_lights);
+    publish_autoware_traffic_lights(stamp, traffic_lights);
   }
 
   std::array<double, 3> map_position(const double x, const double y,
@@ -1431,6 +1620,204 @@ private:
                                           : TurnIndicatorsReport::DISABLE));
     }
     turn_indicators_pub_->publish(turn_indicators);
+    hazard_lights_pub_->publish(hazard_lights);
+
+    ControlModeReport mode;
+    mode.stamp = stamp;
+    mode.mode = report_autonomous_mode_ ? ControlModeReport::AUTONOMOUS
+                                        : ControlModeReport::MANUAL;
+    control_mode_pub_->publish(mode);
+
+    if (tf_broadcaster_) {
+      geometry_msgs::msg::TransformStamped transform;
+      transform.header = odometry.header;
+      transform.child_frame_id = base_frame_;
+      transform.transform.translation.x = position[0];
+      transform.transform.translation.y = position[1];
+      transform.transform.translation.z = position[2];
+      transform.transform.rotation = odometry.pose.pose.orientation;
+      tf_broadcaster_->sendTransform(transform);
+    }
+  }
+
+  void publish_hlvtd_ego_state(const HlvtdParticipantData &data,
+                               const builtin_interfaces::msg::Time &stamp,
+                               const ParticipantTimeUpdate &timing) {
+    auto api_position = map_position(data.ego_x, data.ego_y, data.ego_z);
+    if (flatten_z_) {
+      api_position[2] = 0.0;
+    }
+    const double map_heading = data.ego_heading + map_yaw_offset_;
+    auto position = api_position;
+    position[0] += kEgoTfForwardOffsetM * std::cos(map_heading);
+    position[1] += kEgoTfForwardOffsetM * std::sin(map_heading);
+
+    ParticipantMotionState previous;
+    {
+      std::lock_guard<std::mutex> lock(time_mutex_);
+      previous = participant_motion_;
+    }
+    ParticipantMotionState current;
+    current.valid = true;
+    current.x = position[0];
+    current.y = position[1];
+    current.z = position[2];
+    current.heading = map_heading;
+    double longitudinal_acceleration = 0.0;
+    if (previous.valid && timing.derivative_valid) {
+      const double map_vx = (current.x - previous.x) / timing.dt;
+      const double map_vy = (current.y - previous.y) / timing.dt;
+      const double map_vz = (current.z - previous.z) / timing.dt;
+      const double c = std::cos(map_heading);
+      const double s = std::sin(map_heading);
+      current.longitudinal_velocity = c * map_vx + s * map_vy;
+      current.lateral_velocity = -s * map_vx + c * map_vy;
+      current.heading_rate =
+          normalize_angle(map_heading - previous.heading) / timing.dt;
+      current.velocity_valid = true;
+      if (previous.velocity_valid) {
+        longitudinal_acceleration =
+            (current.longitudinal_velocity - previous.longitudinal_velocity) /
+            timing.dt;
+      }
+      (void)map_vz;
+    }
+    {
+      std::lock_guard<std::mutex> lock(time_mutex_);
+      participant_motion_ = current;
+    }
+    {
+      std::lock_guard<std::mutex> lock(ego_pose_mutex_);
+      ego_x_ = position[0];
+      ego_y_ = position[1];
+      ego_z_ = position[2];
+      ego_yaw_ = map_heading;
+      ego_pose_received_ = true;
+    }
+
+    tf2::Quaternion orientation;
+    orientation.setRPY(data.ego_roll, data.ego_pitch, map_heading);
+
+    Odometry odometry;
+    odometry.header.stamp = stamp;
+    odometry.header.frame_id = map_frame_;
+    odometry.child_frame_id = base_frame_;
+    odometry.pose.pose.position.x = position[0];
+    odometry.pose.pose.position.y = position[1];
+    odometry.pose.pose.position.z = position[2];
+    odometry.pose.pose.orientation = tf2::toMsg(orientation);
+    odometry.pose.covariance[0] = 0.01;
+    odometry.pose.covariance[7] = 0.01;
+    odometry.pose.covariance[14] = 0.01;
+    odometry.pose.covariance[21] = 0.001;
+    odometry.pose.covariance[28] = 0.001;
+    odometry.pose.covariance[35] = 0.001;
+    odometry.twist.twist.linear.x = current.longitudinal_velocity;
+    odometry.twist.twist.linear.y = current.lateral_velocity;
+    odometry.twist.twist.angular.z = current.heading_rate;
+    odometry.twist.covariance[0] = 0.01;
+    odometry.twist.covariance[7] = 0.01;
+    odometry.twist.covariance[14] = 0.01;
+    odometry.twist.covariance[21] = 0.001;
+    odometry.twist.covariance[28] = 0.001;
+    odometry.twist.covariance[35] = 0.001;
+
+    AccelWithCovarianceStamped acceleration;
+    acceleration.header.stamp = stamp;
+    acceleration.header.frame_id = base_frame_;
+    acceleration.accel.accel.linear.x = longitudinal_acceleration;
+    acceleration.accel.covariance[0] = 0.1;
+    acceleration.accel.covariance[7] = 0.1;
+    acceleration.accel.covariance[14] = 0.1;
+    acceleration.accel.covariance[21] = 0.1;
+    acceleration.accel.covariance[28] = 0.1;
+    acceleration.accel.covariance[35] = 0.1;
+
+    VelocityReport velocity;
+    velocity.header.stamp = stamp;
+    velocity.header.frame_id = base_frame_;
+    velocity.longitudinal_velocity =
+        static_cast<float>(current.longitudinal_velocity);
+    velocity.lateral_velocity = static_cast<float>(current.lateral_velocity);
+    velocity.heading_rate = static_cast<float>(current.heading_rate);
+
+    VtdEgoState api_ego;
+    api_ego.header.stamp = stamp;
+    api_ego.header.frame_id = map_frame_;
+    api_ego.ego_x = static_cast<float>(api_position[0]);
+    api_ego.ego_y = static_cast<float>(api_position[1]);
+    api_ego.ego_z = static_cast<float>(api_position[2]);
+    api_ego.ego_heading = static_cast<float>(map_heading);
+    api_ego.ego_pitch = data.ego_pitch;
+    api_ego.ego_roll = data.ego_roll;
+    ego_state_pub_->publish(api_ego);
+    odometry_pub_->publish(odometry);
+    acceleration_pub_->publish(acceleration);
+    velocity_pub_->publish(velocity);
+
+    LocalizationInitializationState localization_state;
+    localization_state.stamp = stamp;
+    localization_state.state = LocalizationInitializationState::INITIALIZED;
+    localization_initialization_state_pub_->publish(localization_state);
+
+    if (publish_empty_occupancy_grid_ && occupancy_grid_resolution_ > 0.0 &&
+        occupancy_grid_width_ > 0 && occupancy_grid_height_ > 0) {
+      const double previous_grid_time = last_occupancy_grid_sim_time_.load();
+      if (previous_grid_time < 0.0 ||
+          timing.ros_time - previous_grid_time >= occupancy_grid_period_sec_) {
+        last_occupancy_grid_sim_time_.store(timing.ros_time);
+        OccupancyGrid grid;
+        grid.header.stamp = stamp;
+        grid.header.frame_id = map_frame_;
+        grid.info.map_load_time = stamp;
+        grid.info.resolution = static_cast<float>(occupancy_grid_resolution_);
+        grid.info.width = static_cast<std::uint32_t>(occupancy_grid_width_);
+        grid.info.height = static_cast<std::uint32_t>(occupancy_grid_height_);
+        grid.info.origin.position.x =
+            position[0] - 0.5 * occupancy_grid_resolution_ *
+                              static_cast<double>(occupancy_grid_width_);
+        grid.info.origin.position.y =
+            position[1] - 0.5 * occupancy_grid_resolution_ *
+                              static_cast<double>(occupancy_grid_height_);
+        grid.info.origin.orientation.w = 1.0;
+        grid.data.assign(static_cast<std::size_t>(occupancy_grid_width_) *
+                             static_cast<std::size_t>(occupancy_grid_height_),
+                         0);
+        occupancy_grid_pub_->publish(grid);
+        ++occupancy_grid_updates_;
+      }
+    }
+
+    CommandState command;
+    {
+      std::lock_guard<std::mutex> lock(command_mutex_);
+      command = command_;
+    }
+    SteeringReport steering;
+    steering.stamp = stamp;
+    // The supplied VTD -> participant interface has no measured steering
+    // field. Report the latest accepted command instead of using an
+    // undocumented RDB vehicle-system value.
+    steering.steering_tire_angle =
+        command.received ? command.steering_angle : 0.0F;
+    steering_pub_->publish(steering);
+
+    GearReport gear;
+    gear.stamp = stamp;
+    gear.report = static_cast<std::uint8_t>(command.gear);
+    gear_pub_->publish(gear);
+
+    const bool hazard_enabled =
+        command.hazard_lights == HazardLightsCommand::ENABLE;
+    TurnIndicatorsReport turn_indicators;
+    turn_indicators.stamp = stamp;
+    turn_indicators.report = hazard_enabled ? TurnIndicatorsReport::DISABLE
+                                            : command.turn_indicators;
+    turn_indicators_pub_->publish(turn_indicators);
+    HazardLightsReport hazard_lights;
+    hazard_lights.stamp = stamp;
+    hazard_lights.report = hazard_enabled ? HazardLightsReport::ENABLE
+                                          : HazardLightsReport::DISABLE;
     hazard_lights_pub_->publish(hazard_lights);
 
     ControlModeReport mode;
@@ -1805,18 +2192,12 @@ private:
                      static_cast<float>(max_steering_angle_));
       command_.last_received = std::chrono::steady_clock::now();
     }
-    if (!send_control_every_frame_) {
-      send_control(last_sim_time_.load(), last_frame_no_.load());
-    }
   }
 
   void on_gear(const GearCommand &gear) {
     {
       std::lock_guard<std::mutex> lock(command_mutex_);
       command_.gear = gear.command;
-    }
-    if (!send_control_every_frame_) {
-      send_control(last_sim_time_.load(), last_frame_no_.load());
     }
   }
 
@@ -1836,9 +2217,6 @@ private:
       std::lock_guard<std::mutex> lock(command_mutex_);
       command_.turn_indicators = command;
     }
-    if (!send_control_every_frame_) {
-      send_control(last_sim_time_.load(), last_frame_no_.load());
-    }
   }
 
   void on_hazard_lights(const HazardLightsCommand &hazard_lights) {
@@ -1857,15 +2235,10 @@ private:
       std::lock_guard<std::mutex> lock(command_mutex_);
       command_.hazard_lights = command;
     }
-    if (!send_control_every_frame_) {
-      send_control(last_sim_time_.load(), last_frame_no_.load());
-    }
   }
 
-  void send_control(const double sim_time, const std::uint32_t frame_no) {
-    (void)sim_time;
-    (void)frame_no;
-    if (!control_client_ || !control_client_->connected()) {
+  void send_control() {
+    if (!control_client_) {
       return;
     }
     CommandState command;
@@ -1882,8 +2255,8 @@ private:
                                         command.last_received)
               .count();
       timed_out = age > control_timeout_sec_;
-      acceleration = static_cast<float>(
-          timed_out ? watchdog_deceleration_ : command.acceleration);
+      acceleration = static_cast<float>(timed_out ? watchdog_deceleration_
+                                                  : command.acceleration);
       steering = timed_out ? 0.0F : command.steering_angle;
     }
     std::uint8_t turn_signal = 0U;
@@ -1897,7 +2270,6 @@ private:
     }
 
     if (control_client_->send_command(steering, acceleration, turn_signal)) {
-      ++control_packets_;
       watchdog_active_ = timed_out;
     }
   }
@@ -1922,32 +2294,56 @@ private:
     DiagnosticArray array;
     array.header.stamp = now();
     DiagnosticStatus status;
-    status.name = "vtd_ros2_bridge/RDB";
-    status.hardware_id = "VTD";
-    const bool state_connected = state_client_ && state_client_->connected();
+    status.name = "vtd_ros2_bridge/HLVTD_interface";
+    status.hardware_id = "HLVTD";
     const bool control_connected =
         control_client_ && control_client_->connected();
-    status.level = state_connected && control_connected
-                       ? DiagnosticStatus::OK
-                       : DiagnosticStatus::ERROR;
-    status.message = state_connected && control_connected
-                         ? "RDB state and HLVTD control connected"
-                         : "RDB state or HLVTD control disconnected";
-    append_value(status, "host", host_);
-    append_value(status, "state_connected", state_connected ? 1 : 0);
+    const bool data_received = state_frame_received_.load();
+    status.level = control_connected && data_received ? DiagnosticStatus::OK
+                                                      : DiagnosticStatus::ERROR;
+    status.message = control_connected && data_received
+                         ? "9910 DATA/CONTROL active"
+                         : "9910 disconnected or no DATA received";
     append_value(status, "control_host", control_host_);
     append_value(status, "control_port", control_port_);
     append_value(status, "control_connected", control_connected ? 1 : 0);
+    append_value(status, "participant_data_received", data_received ? 1 : 0);
     append_value(status, "control_rx_bytes",
                  control_client_ ? control_client_->received_bytes() : 0U);
-    const bool sensor_tcp_connected =
-        sensor_client_ && sensor_client_->connected();
-    append_value(status, "sensor_connected", sensor_tcp_connected ? 1 : 0);
-    append_value(status, "sensor_tcp_connected", sensor_tcp_connected ? 1 : 0);
-    append_value(status, "image_connected",
-                 image_client_ && image_client_->connected() ? 1 : 0);
-    append_value(status, "shm_connected",
-                 shm_reader_ && shm_reader_->connected() ? 1 : 0);
+    append_value(status, "participant_data_packets_decoded",
+                 control_client_ ? control_client_->decoded_data_packets()
+                                 : 0U);
+    append_value(status, "participant_data_packets_skipped",
+                 control_client_ ? control_client_->skipped_data_packets()
+                                 : 0U);
+    append_value(status, "control_packets_queued",
+                 control_client_ ? control_client_->queued_commands() : 0U);
+    append_value(status, "control_packets_sent",
+                 control_client_ ? control_client_->sent_commands() : 0U);
+    append_value(status, "control_packets_overwritten",
+                 control_client_ ? control_client_->overwritten_commands()
+                                 : 0U);
+    const bool traffic_light_rdb_connected =
+        traffic_light_rdb_client_ && traffic_light_rdb_client_->connected();
+    append_value(status, "raw_rdb_tcp_enabled", 0);
+    append_value(status, "traffic_light_rdb_enabled",
+                 traffic_light_rdb_port_ > 0 ? 1 : 0);
+    append_value(status, "traffic_light_rdb_connected",
+                 traffic_light_rdb_connected ? 1 : 0);
+    append_value(status, "traffic_light_rdb_messages",
+                 traffic_light_rdb_client_
+                     ? traffic_light_rdb_client_->received_messages()
+                     : 0U);
+    append_value(status, "traffic_light_rdb_frames",
+                 rdb_traffic_light_frames_.load());
+    append_value(
+        status, "traffic_light_source",
+        std::string{traffic_light_source_.load() == 1 ? "RDB" : "HLVTD"});
+    {
+      std::lock_guard<std::mutex> lock(api_mutex_);
+      append_value(status, "traffic_light_rdb_cached_items",
+                   traffic_lights_by_id_.size());
+    }
     append_value(status, "ego_updates", ego_updates_.load());
     append_value(status, "object_updates", object_updates_.load());
     append_value(status, "traffic_light_updates",
@@ -1969,7 +2365,8 @@ private:
     append_value(status, "clock_updates", clock_updates_.load());
     append_value(status, "session_resets", session_resets_.load());
     append_value(status, "sim_time_offset_sec", sim_time_offset_.load());
-    append_value(status, "control_packets", control_packets_.load());
+    append_value(status, "control_packets",
+                 control_client_ ? control_client_->sent_commands() : 0U);
     append_value(status, "parse_errors", parse_errors_.load());
     append_value(status, "watchdog_active", watchdog_active_.load() ? 1 : 0);
     {
@@ -1985,13 +2382,13 @@ private:
     diagnostics_pub_->publish(array);
   }
 
-  std::string host_;
-  int state_port_{};
-  int sensor_port_{};
-  int image_port_{};
   std::string control_host_;
   int control_port_{};
   int control_reconnect_delay_ms_{};
+  int control_send_period_ms_{};
+  std::string traffic_light_rdb_host_;
+  int traffic_light_rdb_port_{};
+  double traffic_light_rdb_max_age_sec_{};
   int ego_player_id_{};
   std::string ego_name_;
   int camera_id_{};
@@ -2025,7 +2422,6 @@ private:
   double min_acceleration_{};
   double max_acceleration_{};
   double max_steering_angle_{};
-  bool send_control_every_frame_{};
   bool report_autonomous_mode_{};
   bool report_commanded_gear_{};
   bool report_commanded_lights_{};
@@ -2042,11 +2438,8 @@ private:
   double camera_cx_{};
   double camera_cy_{};
 
-  std::unique_ptr<RdbTcpClient> state_client_;
-  std::unique_ptr<RdbTcpClient> sensor_client_;
-  std::unique_ptr<RdbTcpClient> image_client_;
   std::unique_ptr<HlvtdControlClient> control_client_;
-  std::unique_ptr<RdbShmReader> shm_reader_;
+  std::unique_ptr<RdbTcpClient> traffic_light_rdb_client_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   rclcpp::Publisher<Odometry>::SharedPtr odometry_pub_;
@@ -2079,6 +2472,7 @@ private:
   rclcpp::Subscription<HazardLightsCommand>::SharedPtr hazard_lights_sub_;
   rclcpp::Subscription<PathWithLaneId>::SharedPtr road_speed_limit_sub_;
   rclcpp::TimerBase::SharedPtr diagnostics_timer_;
+  rclcpp::TimerBase::SharedPtr control_send_timer_;
 
   std::mutex command_mutex_;
   CommandState command_;
@@ -2095,6 +2489,8 @@ private:
   std::mutex api_mutex_;
   std::vector<VtdObject> pending_objects_;
   std::map<std::int32_t, VtdTrafficLight> traffic_lights_by_id_;
+  bool rdb_traffic_light_received_{};
+  std::chrono::steady_clock::time_point last_rdb_traffic_light_update_{};
   std::unordered_map<std::int32_t, std::vector<std::int64_t>>
       traffic_light_group_ids_;
   std::unordered_map<std::int32_t, std::int32_t> traffic_light_signal_types_;
@@ -2105,11 +2501,16 @@ private:
   double last_raw_state_sim_time_{};
   double last_ros_state_time_{};
   std::uint32_t last_raw_state_frame_{};
+  bool participant_time_initialized_{};
+  std::chrono::steady_clock::time_point last_participant_receive_time_{};
+  ParticipantMotionState participant_motion_{};
   std::atomic<double> sim_time_offset_{0.0};
   std::atomic<double> last_sim_time_{0.0};
   std::atomic<double> last_occupancy_grid_sim_time_{-1.0};
   std::atomic<std::uint32_t> last_frame_no_{0U};
   std::atomic<std::uint32_t> last_api_publish_frame_{
+      std::numeric_limits<std::uint32_t>::max()};
+  std::atomic<std::uint32_t> last_control_queue_frame_{
       std::numeric_limits<std::uint32_t>::max()};
   std::atomic<bool> state_frame_received_{false};
   std::atomic<std::uint64_t> ego_updates_{0U};
@@ -2117,6 +2518,8 @@ private:
   std::atomic<std::uint64_t> traffic_light_updates_{0U};
   std::atomic<std::uint64_t> autoware_traffic_light_updates_{0U};
   std::atomic<std::uint64_t> traffic_light_items_{0U};
+  std::atomic<std::uint64_t> rdb_traffic_light_frames_{0U};
+  std::atomic<int> traffic_light_source_{0};
   std::atomic<std::uint64_t> autoware_traffic_light_groups_{0U};
   std::atomic<std::uint64_t> unmapped_traffic_light_ids_{0U};
   std::atomic<std::uint64_t> objects_dropped_{0U};
@@ -2126,7 +2529,6 @@ private:
   std::atomic<std::uint64_t> obstacle_pointcloud_updates_{0U};
   std::atomic<std::uint64_t> clock_updates_{0U};
   std::atomic<std::uint64_t> session_resets_{0U};
-  std::atomic<std::uint64_t> control_packets_{0U};
   std::atomic<std::uint64_t> parse_errors_{0U};
   std::atomic<bool> watchdog_active_{false};
 };

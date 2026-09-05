@@ -15,6 +15,7 @@
 #include "autoware/behavior_path_lane_change_module/manager.hpp"
 #include "autoware/behavior_path_lane_change_module/scene.hpp"
 #include "autoware/behavior_path_lane_change_module/structs/data.hpp"
+#include "autoware/behavior_path_lane_change_module/utils/calculation.hpp"
 #include "autoware/behavior_path_planner_common/data_manager.hpp"
 #include "autoware_test_utils/autoware_test_utils.hpp"
 #include "autoware_test_utils/mock_data_parser.hpp"
@@ -25,6 +26,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -271,4 +274,75 @@ TEST_F(TestNormalLaneChange, testGetPathWhenValid)
   const auto & lc_status = normal_lane_change_->getLaneChangeStatus();
 
   ASSERT_TRUE(lc_status.is_valid_path);
+}
+
+TEST_F(TestNormalLaneChange, testAvoidanceFromPreferredLaneHasAdjacentShiftInterval)
+{
+  normal_lane_change_ = std::make_shared<NormalLaneChange>(
+    lc_param_ptr_, LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE, Direction::RIGHT);
+  normal_lane_change_->setData(planner_data_);
+  set_previous_approved_path();
+
+  normal_lane_change_->update_lanes(false);
+  ASSERT_TRUE(get_common_data_ptr()->is_lanes_available());
+  const auto & target_lanes = get_common_data_ptr()->lanes_ptr->target;
+  ASSERT_FALSE(target_lanes.empty());
+  EXPECT_TRUE(get_common_data_ptr()->route_handler_ptr->isRouteLanelet(target_lanes.front()));
+  const auto & current_lanes = get_common_data_ptr()->lanes_ptr->current;
+  const auto & target_neighbor_lanes = get_common_data_ptr()->lanes_ptr->target_neighbor;
+  ASSERT_EQ(target_neighbor_lanes.size(), current_lanes.size());
+  for (size_t i = 0; i < current_lanes.size(); ++i) {
+    EXPECT_EQ(target_neighbor_lanes.at(i).id(), current_lanes.at(i).id());
+  }
+
+  const auto [lane_change_length, distance_buffer] = autoware::behavior_path_planner::utils::
+    lane_change::calculation::calc_lc_length_and_dist_buffer(
+      get_common_data_ptr(), normal_lane_change_->get_current_lanes());
+
+  EXPECT_TRUE(std::isfinite(lane_change_length.min));
+  EXPECT_TRUE(std::isfinite(distance_buffer.min));
+  EXPECT_LT(lane_change_length.min, std::numeric_limits<double>::max());
+  EXPECT_LT(distance_buffer.min, std::numeric_limits<double>::max());
+}
+
+TEST_F(TestNormalLaneChange, testAvoidanceLongitudinalCapRejectsArtificiallyCompressedCandidate)
+{
+  auto common_data = get_common_data_ptr();
+  common_data->lc_type = LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE;
+
+  constexpr double shift_length = 3.2;
+  const double min_velocity = common_data->lc_param_ptr->trajectory.min_lane_changing_velocity;
+  const double initial_velocity = min_velocity + 2.0;
+  constexpr double max_path_velocity = 16.0;
+  constexpr double requested_acceleration = 0.6;
+  const auto uncapped =
+    autoware::behavior_path_planner::utils::lane_change::calculation::calc_shift_phase_metrics(
+      common_data, shift_length, initial_velocity, max_path_velocity, requested_acceleration);
+  ASSERT_FALSE(uncapped.empty());
+
+  const auto shortest_uncapped = std::min_element(
+    uncapped.begin(), uncapped.end(),
+    [](const auto & lhs, const auto & rhs) { return lhs.length < rhs.length; });
+  const double min_acceleration = (min_velocity - initial_velocity) / shortest_uncapped->duration;
+  const double physical_minimum_length =
+    autoware::behavior_path_planner::utils::lane_change::calculation::calc_phase_length(
+      initial_velocity, common_data->bpp_param_ptr->max_vel, min_acceleration,
+      shortest_uncapped->duration);
+  const double shortened_cap = 0.5 * (physical_minimum_length + shortest_uncapped->length);
+
+  const auto shortened =
+    autoware::behavior_path_planner::utils::lane_change::calculation::calc_shift_phase_metrics(
+      common_data, shift_length, initial_velocity, max_path_velocity, requested_acceleration,
+      shortened_cap);
+  // The cap is only a candidate filter.  It must not force an extra longitudinal deceleration to
+  // squeeze the maneuver into a shorter distance: PathShifter intentionally ignores negative
+  // longitudinal acceleration, so such a metric and its generated geometry would disagree.
+  EXPECT_TRUE(shortened.empty());
+
+  common_data->lc_type = LaneChangeModuleType::NORMAL;
+  const auto ordinary_lane_change =
+    autoware::behavior_path_planner::utils::lane_change::calculation::calc_shift_phase_metrics(
+      common_data, shift_length, initial_velocity, max_path_velocity, requested_acceleration,
+      shortened_cap);
+  EXPECT_TRUE(ordinary_lane_change.empty());
 }

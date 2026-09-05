@@ -34,15 +34,22 @@ packages:
     local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_lane_change_module
     repository_path: vtd_overlay/src/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_lane_change_module
     changed_files:
-      - config/lane_change.param.yaml
-      - include/autoware/behavior_path_lane_change_module/structs/parameters.hpp
-      - include/autoware/behavior_path_lane_change_module/utils/calculation.hpp
-      - include/autoware/behavior_path_lane_change_module/utils/utils.hpp
-      - src/manager.cpp
       - src/scene.cpp
       - src/utils/calculation.cpp
       - src/utils/utils.cpp
-    source_tree_sha256: c009d86de60809a18e7201913e31c821bb3d63fe51c88f64b549746b893c8d07
+      - test/test_lane_change_scene.cpp
+    source_tree_sha256: d333c74954f6f429be4267102729927de18b9d24bc2fc38bc5d3a0be7efdf8f4
+    license: Apache-2.0
+  - package: autoware_behavior_path_avoidance_by_lane_change_module
+    origin_url: https://github.com/autowarefoundation/autoware_universe.git
+    upstream_ref: 0.52.0
+    upstream_commit: 6e477c645efec33f7909095eea684474e97f5e3d
+    local_source_path_before_migration: /home/a/autoware/src/universe/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_avoidance_by_lane_change_module
+    repository_path: vtd_overlay/src/autoware_universe/planning/behavior_path_planner/autoware_behavior_path_avoidance_by_lane_change_module
+    changed_files:
+      - src/interface.cpp
+      - src/scene.cpp
+    source_tree_sha256: aa627b00a5ce1c03fb1365d9207dd264b59f4256c8d1bcda861fcee2958cdd39
     license: Apache-2.0
   - package: autoware_behavior_path_planner
     origin_url: https://github.com/autowarefoundation/autoware_universe.git
@@ -90,6 +97,41 @@ packages:
     changed_files:
       - config/traffic_light.param.yaml
     source_tree_sha256: 2f052e7e992b294d9568ef789579b24714bc66ea01e305605b870e89e3ab3e95
+    license: Apache-2.0
+  - package: autoware_fixed_route_obstacle_bypass_planner
+    origin_url: local-only; no upstream repository exists
+    upstream_ref: local-only
+    upstream_commit: not-applicable
+    local_source_path_before_migration: not-applicable; introduced in the tracked VTD overlay
+    repository_path: vtd_overlay/src/autoware_universe/planning/fixed_route_obstacle_bypass/autoware_fixed_route_obstacle_bypass_planner
+    changed_files:
+      - CMakeLists.txt
+      - config/class_free_behavior_path_override.param.yaml
+      - config/class_free_behavior_velocity_override.param.yaml
+      - config/fixed_route_obstacle_bypass.param.yaml
+      - include/autoware/fixed_route_obstacle_bypass_planner/corridor.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/final_validator_node.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/geometry.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/object_tracker.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/parameters.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/planner_node.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/trajectory.hpp
+      - include/autoware/fixed_route_obstacle_bypass_planner/types.hpp
+      - launch/fixed_route_obstacle_bypass.launch.xml
+      - package.xml
+      - src/corridor.cpp
+      - src/final_validator_node.cpp
+      - src/geometry.cpp
+      - src/object_tracker.cpp
+      - src/parameters.cpp
+      - src/planner_node.cpp
+      - src/trajectory.cpp
+      - test/test_corridor.cpp
+      - test/test_geometry.cpp
+      - test/test_object_tracker.cpp
+      - test/test_trajectory.cpp
+      - test/test_utils.hpp
+    source_tree_sha256: 0b1f562bdf7b51969f332b21d7ebfa6755e9881fb97b3037267337f96d9004f2
     license: Apache-2.0
   - package: vtd_ros2_bridge
     origin_url: local-only; no upstream repository was found

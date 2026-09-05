@@ -21,7 +21,7 @@ def generate_launch_description():
     )
     config = LaunchConfiguration("config")
     lidar_config = LaunchConfiguration("lidar_config")
-    host = LaunchConfiguration("rdb_host")
+    host = LaunchConfiguration("hlvtd_host")
     control_host = LaunchConfiguration("control_host")
     control_port = LaunchConfiguration("control_port")
     lidar_udp_bind = LaunchConfiguration("lidar_udp_bind")
@@ -31,7 +31,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("config", default_value=default_config),
             DeclareLaunchArgument("lidar_config", default_value=default_lidar_config),
-            DeclareLaunchArgument("rdb_host", default_value="127.0.0.1"),
+            DeclareLaunchArgument("hlvtd_host", default_value="127.0.0.1"),
             DeclareLaunchArgument("control_host", default_value=host),
             DeclareLaunchArgument("control_port", default_value="9910"),
             DeclareLaunchArgument("lidar_udp_bind", default_value="0.0.0.0"),
@@ -44,8 +44,8 @@ def generate_launch_description():
                 parameters=[
                     config,
                     {
-                        "rdb_host": host,
                         "control.host": control_host,
+                        "traffic_light.rdb_host": control_host,
                         "control.port": ParameterValue(
                             control_port, value_type=int
                         ),

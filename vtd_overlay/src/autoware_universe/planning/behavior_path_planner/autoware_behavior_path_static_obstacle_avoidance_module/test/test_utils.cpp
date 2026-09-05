@@ -790,7 +790,18 @@ TEST(TestUtils, isSameDirectionShift)
   {
     ObjectData object;
     object.direction = Direction::NONE;
-    EXPECT_THROW(isSameDirectionShift(isOnRight(object), positive_shift_length), std::logic_error);
+    object.preferred_direction = Direction::RIGHT;
+    EXPECT_TRUE(isSameDirectionShift(isOnRight(object), negative_shift_length));
+    EXPECT_FALSE(isSameDirectionShift(isOnRight(object), positive_shift_length));
+  }
+
+  {
+    ObjectData object;
+    object.direction = Direction::NONE;
+    object.preferred_direction = Direction::NONE;
+    object.to_centerline = 1.0;
+    EXPECT_TRUE(isSameDirectionShift(isOnRight(object), positive_shift_length));
+    EXPECT_FALSE(isSameDirectionShift(isOnRight(object), negative_shift_length));
   }
 }
 
@@ -817,7 +828,18 @@ TEST(TestUtils, isShiftNecessary)
   {
     ObjectData object;
     object.direction = Direction::NONE;
-    EXPECT_THROW(isShiftNecessary(isOnRight(object), positive_shift_length), std::logic_error);
+    object.preferred_direction = Direction::LEFT;
+    EXPECT_TRUE(isShiftNecessary(isOnRight(object), negative_shift_length));
+    EXPECT_FALSE(isShiftNecessary(isOnRight(object), positive_shift_length));
+  }
+
+  {
+    ObjectData object;
+    object.direction = Direction::NONE;
+    object.preferred_direction = Direction::NONE;
+    object.to_centerline = -1.0;
+    EXPECT_TRUE(isShiftNecessary(isOnRight(object), positive_shift_length));
+    EXPECT_FALSE(isShiftNecessary(isOnRight(object), negative_shift_length));
   }
 }
 

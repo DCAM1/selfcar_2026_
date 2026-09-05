@@ -31,6 +31,7 @@
 
 #include <limits>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -277,6 +278,19 @@ struct CommonData
   PathWithLaneId target_lanes_path;
   ModuleType lc_type;
   std::vector<lanelet::ConstLineString3d> no_lane_change_lines;
+
+  // Optional route-local target selected by a specialized lane-change module. This lets obstacle
+  // avoidance request a direct shift across multiple lanes without changing normal lane-change
+  // target selection.
+  std::optional<lanelet::Id> requested_target_lane_id;
+
+  // Applied only by avoidance-by-lane-change when computing its dynamic longitudinal cap.
+  double max_lane_changing_length_scale{1.0};
+
+  // Applied only by avoidance-by-lane-change while constructing its shifted path. This is kept
+  // separate from the ordinary lane-change parameters so the temporary VTD override cannot alter
+  // route-mandated lane changes.
+  bool disable_lateral_acceleration_limit{false};
 
   Direction direction;
 

@@ -125,6 +125,10 @@ install(PROGRAMS
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_hlvtd_control_client test/test_hlvtd_control_client.cpp)
+  if(TARGET test_hlvtd_control_client)
+    target_link_libraries(test_hlvtd_control_client vtd_rdb_core)
+  endif()
   ament_add_gtest(test_hlvtd_lidar_codec test/test_hlvtd_lidar_codec.cpp)
   if(TARGET test_hlvtd_lidar_codec)
     target_link_libraries(test_hlvtd_lidar_codec vtd_rdb_core)

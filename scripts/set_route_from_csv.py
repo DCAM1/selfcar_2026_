@@ -846,6 +846,8 @@ class RoutePreviewPublisher:
 
         self.node = node
         self.frame_id = frame_id
+        self._result: MatchedRoute | None = None
+        self._keepalive_timer = None
         qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -1122,7 +1124,10 @@ class RoutePreviewPublisher:
         )
         return array
 
-    def publish(self, result: MatchedRoute) -> None:
+    def _publish_current(self) -> None:
+        if self._result is None:
+            return
+        result = self._result
         messages = {
             self.RAW_TOPIC: self._raw_markers(result),
             self.CANDIDATE_TOPIC: self._candidate_markers(result),
@@ -1131,6 +1136,16 @@ class RoutePreviewPublisher:
         }
         for topic, message in messages.items():
             self.publishers[topic].publish(message)
+
+    def publish(self, result: MatchedRoute) -> None:
+        self._result = result
+        self._publish_current()
+        if self._keepalive_timer is None:
+            # Republish so RViz displays added after this process starts also receive
+            # the preview, even when the display uses volatile durability.
+            self._keepalive_timer = self.node.create_timer(
+                1.0, self._publish_current
+            )
         print("\nRoute preview published to RViz.", flush=True)
 
 
@@ -1524,12 +1539,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--start-tolerance",
         type=_nonnegative_float,
         default=5.0,
-        help="distance from localization to corrected seq 1 (default: 5 m)",
+        help="distance allowed by optional --check-start (default: 5 m)",
     )
-    parser.add_argument(
+    start_check_group = parser.add_mutually_exclusive_group()
+    start_check_group.add_argument(
+        "--check-start",
+        action="store_true",
+        help="enforce proximity between localization and corrected seq 1",
+    )
+    start_check_group.add_argument(
         "--skip-start-check",
         action="store_true",
-        help="submit even when the vehicle is not near corrected seq 1",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--allow-goal-modification",
@@ -1540,6 +1561,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--allow-direction-mismatch",
         action="store_true",
         help="submit even when selected lane direction exceeds the threshold",
+    )
+    parser.add_argument(
+        "--strict-validation",
+        action="store_true",
+        help="block route submission when direction or goal validation fails",
     )
     parser.add_argument(
         "--preview-wait",
@@ -1609,6 +1635,18 @@ def _spin_for(node: Any, seconds: float) -> None:
         )
 
 
+def _keep_preview_alive(node: Any, message: str) -> None:
+    import rclpy
+
+    print(message, flush=True)
+    print(
+        "RViz preview remains active and is republished every second; "
+        "press Ctrl-C to exit.",
+        flush=True,
+    )
+    rclpy.spin(node)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_argument_parser()
     args = parser.parse_args(argv)
@@ -1670,14 +1708,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
 
         print_match_report(result)
+        validation_errors = []
         if not result.direction_ok and not args.allow_direction_mismatch:
-            raise MapMatchError(
+            validation_errors.append(
                 "selected lanelet direction exceeds --direction-threshold"
             )
         if not result.goal_ok:
-            raise MapMatchError(
+            validation_errors.append(
                 "corrected goal does not have enough in-lane vehicle clearance"
             )
+        for validation_error in validation_errors:
+            print(f"WARNING: {validation_error}", file=sys.stderr, flush=True)
+        if args.strict_validation and validation_errors:
+            raise MapMatchError("; ".join(validation_errors))
         if args.output_csv:
             save_corrected_csv(
                 result, args.output_csv, overwrite=args.force_output
@@ -1687,19 +1730,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             preview.publish(result)
             _spin_for(node, args.preview_wait)
         if args.preview_only:
-            print("Preview-only mode; press Ctrl-C to exit.", flush=True)
-            rclpy.spin(node)
+            _keep_preview_alive(node, "Preview-only mode.")
             return 0
 
-        set_autoware_route(
-            node,
-            result,
-            frame_id=args.frame_id,
-            timeout=args.timeout,
-            start_tolerance=args.start_tolerance,
-            skip_start_check=args.skip_start_check,
-            allow_goal_modification=args.allow_goal_modification,
-        )
+        try:
+            set_autoware_route(
+                node,
+                result,
+                frame_id=args.frame_id,
+                timeout=args.timeout,
+                start_tolerance=args.start_tolerance,
+                skip_start_check=not args.check_start,
+                allow_goal_modification=args.allow_goal_modification,
+            )
+        except RouteSetError as error:
+            print(f"ERROR: {error}", file=sys.stderr, flush=True)
+            if not args.no_preview:
+                _keep_preview_alive(
+                    node, "Route submission failed, but the preview will stay alive."
+                )
+            return 1
+
+        if not args.no_preview:
+            _keep_preview_alive(
+                node, "Route submission finished; keeping the preview alive."
+            )
     except (RouteCsvError, MapMatchError, RouteSetError) as error:
         print(f"ERROR: {error}", file=sys.stderr, flush=True)
         return 1

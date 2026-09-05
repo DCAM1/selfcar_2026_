@@ -1,4 +1,10 @@
 launch:
+  # VTD-only class-free planner. The tier4 launch default remains false, so setting this to false
+  # atomically restores the legacy Autoware obstacle modules below.
+  - arg:
+      name: launch_fixed_route_obstacle_bypass_planner
+      default: "false"
+
   - arg:
       name: behavior_path_planner_type
       default: behavior_path_planner
@@ -127,13 +133,17 @@ launch:
       default: "true"
   - arg:
       name: launch_run_out_module
-      default: "true"
+      # Avoidance-by-lane-change owns ordinary VTD UNKNOWN-object handling. Keeping run_out
+      # active would independently insert a late zero-velocity point into that lane-change path.
+      default: "false"
   - arg:
       name: launch_boundary_departure_prevention_module
       default: "true"
   - arg:
       name: launch_road_user_stop_module
-      default: "true"
+      # VTD supplies semantic UNKNOWN for every actor. This module otherwise treats the same
+      # object selected for lane-change avoidance as a road user and overrides the maneuver.
+      default: "false"
 
   - arg:
       name: velocity_smoother_type

@@ -141,11 +141,6 @@ TurnIndicatorsCommand TurnSignalDecider::getTurnSignal(
     extended_path, current_pose, current_vel, ego_seg_idx, *route_handler, nearest_dist_threshold,
     nearest_yaw_threshold);
 
-  const auto lane_transition_turn_signal_info = getLaneTransitionTurnSignalInfo(
-    extended_path, current_pose, current_vel, ego_seg_idx, *route_handler, nearest_dist_threshold,
-    nearest_yaw_threshold, parameters.turn_signal_minimum_search_distance,
-    parameters.turn_signal_shift_length_threshold);
-
   // Debug data
   if (roundabout_turn_signal_info) {
     debug_data.roundabout_turn_signal_info = *roundabout_turn_signal_info;
@@ -159,12 +154,7 @@ TurnIndicatorsCommand TurnSignalDecider::getTurnSignal(
     intersection_turn_signal_info ? *intersection_turn_signal_info : empty_signal_info;
   const TurnSignalInfo & round_ref =
     roundabout_turn_signal_info ? *roundabout_turn_signal_info : empty_signal_info;
-  const auto behavior_ref =
-    lane_transition_turn_signal_info
-      ? overwrite_turn_signal(
-          extended_path, current_pose, ego_seg_idx, turn_signal_info,
-          *lane_transition_turn_signal_info, nearest_dist_threshold, nearest_yaw_threshold)
-      : turn_signal_info;
+  const auto & behavior_ref = turn_signal_info;
   debug_data.behavior_turn_signal_info = behavior_ref;
   return resolve_turn_signal(
     extended_path, current_pose, ego_seg_idx, inter_ref, round_ref, behavior_ref,
@@ -486,93 +476,6 @@ std::optional<TurnSignalInfo> TurnSignalDecider::getRoundaboutTurnSignalInfo(
     turn_signal_info.desired_end_point = back_pose;
     turn_signal_info.turn_signal.command = roundabout_on_exit_;
     signal_queue.push(turn_signal_info);
-  }
-
-  return resolveSignalQueue(
-    signal_queue, path, current_pose, current_seg_idx, nearest_dist_threshold,
-    nearest_yaw_threshold);
-}
-
-std::optional<TurnSignalInfo> TurnSignalDecider::getLaneTransitionTurnSignalInfo(
-  const PathWithLaneId & path, const Pose & current_pose, const double current_vel,
-  const size_t current_seg_idx, const RouteHandler & route_handler,
-  const double nearest_dist_threshold, const double nearest_yaw_threshold,
-  const double minimum_search_distance, const double lateral_shift_threshold)
-{
-  const auto lanelet_sequence = utils::get_lanelet_sequence_from_path(path, route_handler);
-  if (lanelet_sequence.size() < 3) {
-    return {};
-  }
-
-  const auto is_plain_road_lane = [&route_handler](const lanelet::ConstLanelet & lane) {
-    const auto turn = lane.attributeOr("turn_direction", std::string{});
-    return route_handler.isRoadLanelet(lane) && turn != "left" && turn != "right";
-  };
-  const auto count_plain_lanes = [&](const lanelet::ConstLanelets & lanes) {
-    return std::count_if(lanes.begin(), lanes.end(), is_plain_road_lane);
-  };
-  const auto get_entry_yaw = [](const lanelet::ConstLanelet & lane) -> std::optional<double> {
-    const auto & centerline = lane.centerline3d();
-    if (centerline.size() < 2) {
-      return {};
-    }
-    const auto & p0 = centerline.front();
-    const auto & p1 = centerline[std::min<size_t>(2, centerline.size() - 1)];
-    return std::atan2(p1.y() - p0.y(), p1.x() - p0.x());
-  };
-
-  const double search_distance =
-    std::max(current_vel * turn_signal_search_time_, minimum_search_distance);
-  std::queue<TurnSignalInfo> signal_queue;
-  for (size_t i = 1; i + 1 < lanelet_sequence.size(); ++i) {
-    const auto & transition_lane = lanelet_sequence.at(i);
-    if (!is_plain_road_lane(transition_lane)) {
-      continue;
-    }
-
-    const bool is_lane_increase =
-      count_plain_lanes(route_handler.getNextLanelets(lanelet_sequence.at(i - 1))) > 1;
-    const bool is_lane_decrease =
-      count_plain_lanes(route_handler.getPreviousLanelets(lanelet_sequence.at(i + 1))) > 1;
-    if (!is_lane_increase && !is_lane_decrease) {
-      continue;
-    }
-
-    const auto entry_yaw = get_entry_yaw(transition_lane);
-    const auto & centerline = transition_lane.centerline3d();
-    if (!entry_yaw || centerline.size() < 2) {
-      continue;
-    }
-    const auto & front = centerline.front();
-    const auto & back = centerline.back();
-    const double dx = back.x() - front.x();
-    const double dy = back.y() - front.y();
-    const double lateral_shift = -std::sin(*entry_yaw) * dx + std::cos(*entry_yaw) * dy;
-    if (std::abs(lateral_shift) < lateral_shift_threshold) {
-      continue;
-    }
-
-    const auto front_pose = calculateLaneFrontPose(centerline);
-    const auto back_pose = calculateLaneBackPose(centerline);
-    const double distance_to_front = calc_distance(
-                                       path, current_pose, current_seg_idx, front_pose,
-                                       nearest_dist_threshold, nearest_yaw_threshold) -
-                                     base_link2front_;
-    const double distance_to_back = calc_distance(
-      path, current_pose, current_seg_idx, back_pose, nearest_dist_threshold,
-      nearest_yaw_threshold);
-    if (distance_to_front > search_distance || distance_to_back < 0.0) {
-      continue;
-    }
-
-    TurnSignalInfo signal_info;
-    signal_info.desired_start_point = current_pose;
-    signal_info.required_start_point = front_pose;
-    signal_info.required_end_point = back_pose;
-    signal_info.desired_end_point = back_pose;
-    signal_info.turn_signal.command = lateral_shift > 0.0 ? TurnIndicatorsCommand::ENABLE_LEFT
-                                                          : TurnIndicatorsCommand::ENABLE_RIGHT;
-    signal_queue.push(signal_info);
   }
 
   return resolveSignalQueue(

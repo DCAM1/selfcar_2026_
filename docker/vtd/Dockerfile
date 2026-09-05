@@ -33,6 +33,12 @@ RUN --mount=type=bind,from=vtd,target=/opt/vtd,ro \
       --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF && \
     rm -rf /tmp/selfcar_overlay_build /tmp/selfcar_overlay_log
 
+# Wire the fixed-route planner behind one default-off launch argument. The patch script asserts
+# every upstream fragment before editing so a changed base-image launch layout fails the build.
+COPY docker/files/patch_tier4_planning_launch.py /opt/selfcar-tools/patch_tier4_planning_launch.py
+RUN source /opt/ros/jazzy/setup.bash && \
+    python3 /opt/selfcar-tools/patch_tier4_planning_launch.py
+
 # Install tracked VTD configuration into the same package-share locations the
 # existing Autoware launch files use. This preserves launch arguments while
 # making the configuration part of the immutable image layer.

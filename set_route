@@ -14,7 +14,7 @@ already running Autoware instance. The CSV must contain seq,x,y columns.
 
 Example:
   ./set_route routes/route_example.csv
-  ./set_route /home/a/route_example.csv --start-tolerance 8
+  ./set_route /home/a/route_example.csv --check-start --start-tolerance 8
   ./set_route official.csv --preview-only
   ./set_route official.csv --override-seq 5 --output-csv corrected_route.csv
 
@@ -23,8 +23,9 @@ Options passed to the route setter:
   --map FILE                   Override lanelet2_map.osm
   --candidate-radius METRES    Lanelet centerline search radius (default: 8)
   --timeout SECONDS            Overall timeout (default: 300)
-  --start-tolerance METRES     Allowed distance from seq 1 (default: 5)
-  --skip-start-check           Do not enforce proximity to seq 1
+  --check-start                Opt in to vehicle/seq 1 proximity validation
+  --start-tolerance METRES     Allowed distance with --check-start (default: 5)
+  --strict-validation          Block submission on direction/goal validation
   --allow-goal-modification    Allow Autoware to adjust the goal pose
   --preview-only               Publish markers without setting the route
   --override-seq SEQ           Pick this seq's lanelet using RViz Publish Point

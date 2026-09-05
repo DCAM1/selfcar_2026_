@@ -130,7 +130,8 @@ ShiftLine get_lane_changing_shift_line(
 }
 
 ShiftedPath get_shifted_path(
-  const PathWithLaneId & target_lane_reference_path, const LaneChangeInfo & lane_change_info)
+  const CommonDataPtr & common_data_ptr, const PathWithLaneId & target_lane_reference_path,
+  const LaneChangeInfo & lane_change_info)
 {
   const auto longitudinal_acceleration = lane_change_info.longitudinal_acceleration;
 
@@ -140,7 +141,13 @@ ShiftedPath get_shifted_path(
   path_shifter.setLongitudinalAcceleration(longitudinal_acceleration.lane_changing);
   const auto initial_lane_changing_velocity = lane_change_info.velocity.lane_changing;
   path_shifter.setVelocity(initial_lane_changing_velocity);
-  path_shifter.setLateralAccelerationLimit(std::abs(lane_change_info.lateral_acceleration));
+  const auto lateral_acceleration_limit =
+    common_data_ptr->lc_type ==
+          autoware::behavior_path_planner::LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE &&
+        common_data_ptr->disable_lateral_acceleration_limit
+      ? std::numeric_limits<double>::max()
+      : std::abs(lane_change_info.lateral_acceleration);
+  path_shifter.setLateralAccelerationLimit(lateral_acceleration_limit);
 
   constexpr auto offset_back = false;
   ShiftedPath shifted_path;
@@ -473,7 +480,8 @@ LaneChangePath construct_candidate_path(
   const auto & shift_line = lane_change_info.shift_line;
   const auto terminal_lane_changing_velocity = lane_change_info.terminal_lane_changing_velocity;
 
-  auto shifted_path = get_shifted_path(target_lane_reference_path, lane_change_info);
+  auto shifted_path =
+    get_shifted_path(common_data_ptr, target_lane_reference_path, lane_change_info);
 
   if (shifted_path.path.points.empty()) {
     throw std::logic_error("Failed to generate shifted path.");
@@ -507,8 +515,9 @@ LaneChangePath construct_candidate_path(
     point.lane_ids = target_lane_reference_path.points.at(*nearest_idx).lane_ids;
   }
 
-  if (utils::lane_change::is_intersecting_no_lane_change_lines(
-        common_data_ptr, lane_change_info.length, shifted_path.path.points)) {
+  if (
+    utils::lane_change::is_intersecting_no_lane_change_lines(
+      common_data_ptr, lane_change_info.length, shifted_path.path.points)) {
     throw std::logic_error("Intersect no lane change lines.");
   }
 
@@ -562,7 +571,11 @@ std::vector<lane_change::TrajectoryGroup> generate_frenet_candidates(
       calculation::calc_dist_from_pose_to_terminal_end(
         common_data_ptr, target_lanes, lc_start_pose) -
       common_data_ptr->lc_param_ptr->lane_change_finish_judge_buffer;
-    const auto max_lc_len = transient_data.lane_changing_length.max;
+    const auto raw_max_lc_len = transient_data.lane_changing_length.max;
+    const auto max_lc_len =
+      common_data_ptr->lc_type == LaneChangeModuleType::AVOIDANCE_BY_LANE_CHANGE
+        ? raw_max_lc_len * std::clamp(common_data_ptr->max_lane_changing_length_scale, 0.0, 1.0)
+        : raw_max_lc_len;
     const auto max_lane_changing_length = std::min(dist_to_end_from_lc_start, max_lc_len);
 
     constexpr auto resample_interval = 0.5;
@@ -732,8 +745,9 @@ std::optional<LaneChangePath> get_candidate_path(
   info.lane_changing_start = prepare_segment.points.back().point.pose;
   info.lane_changing_end = lane_changing_candidate.poses.back();
 
-  if (utils::lane_change::is_intersecting_no_lane_change_lines(
-        common_data_ptr, info.length, shifted_path.path.points)) {
+  if (
+    utils::lane_change::is_intersecting_no_lane_change_lines(
+      common_data_ptr, info.length, shifted_path.path.points)) {
     throw std::logic_error("Intersect no lane change lines.");
   }
 
